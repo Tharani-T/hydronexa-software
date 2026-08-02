@@ -39,7 +39,7 @@ export function DashboardShell({
       {/* Sidebar */}
       <aside className={`${isCollapsed ? 'w-20' : 'w-64'} border-r border-glass-border glass-strong flex-shrink-0 hidden lg:flex flex-col transition-all duration-300`}>
         <div className={`p-5 border-b border-glass-border flex ${isCollapsed ? 'justify-center' : 'justify-start'} overflow-hidden`}>
-          <Logo size="sm" />
+          <Logo size="sm" collapsed={isCollapsed} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto overflow-x-hidden">
           {navItems.map((it) => {

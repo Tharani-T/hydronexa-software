@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Shield, Factory, Lock, ArrowRight, AlertTriangle, RefreshCcw } from "lucide-react";
 import { useAppState } from "@/lib/store";
 import { useState } from "react";
+import portalBg from "@/assets/portal-bg.png";
 
 export const Route = createFileRoute("/portal")({
   component: PortalSelect,
@@ -32,51 +33,56 @@ function PortalSelect() {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden gradient-mesh flex flex-col">
-      <Particles count={40} />
+    <div className="min-h-screen relative overflow-hidden flex flex-col">
+      <div className="absolute inset-0 z-0">
+        <img src={portalBg} alt="Industrial Background" className="w-full h-full object-cover" />
+        {/* Light Theme */}
+        <div className="absolute inset-0 dark:hidden bg-white/20"></div>
+
+        {/* Dark Theme */}
+        <div className="absolute inset-0 hidden dark:block bg-background/65 backdrop-blur-[1px]"></div>
+
+        {/* Common Gradient */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent dark:from-background dark:via-background/30 dark:to-transparent"></div>
+      </div>
+
+      <div className="absolute inset-0 z-0 opacity-50 dark:opacity-100">
+        <Particles count={40} />
+      </div>
+
       <header className="relative z-10 flex items-center justify-between p-6 max-w-7xl mx-auto w-full">
         <Logo />
         <ThemeToggle />
       </header>
 
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-10">
+      <div className="relative z-10 flex-1 flex flex-col  items-center justify-center px-4 py-10">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-14">
-          <div className="text-xs uppercase tracking-[0.3em] text-cyan mb-3">Choose your access</div>
-          <h1 className="text-4xl md:text-6xl font-bold">Portal Selection</h1>
+          <h1 className="text-4xl md:text-6xl font-bold ">Industry Access</h1>
           <p className="mt-4 text-muted-foreground max-w-xl mx-auto">
-            Select the appropriate portal. Government access is restricted to authorized regulatory officers only.
+            Access your industry dashboard to monitor water usage, reuse efficiency, and operational compliance.
           </p>
         </motion.div>
 
-        <div className="grid md:grid-cols-2 gap-6 max-w-5xl w-full">
-          <PortalCard
-            badge="Regulatory"
-            icon={Shield}
-            title="Government Portal"
-            desc="Monitor industrial compliance, CTO violations, sustainability metrics, and regulatory intelligence in real time."
-            cta="Secure Government Access"
-            accent="cyan"
-            onClick={goGov}
-            secure
-            delay={0}
-          />
-          <PortalCard
-            badge="Industry"
-            icon={Factory}
-            title="Industry Portal"
-            desc="Track water usage, reuse efficiency, AI insights, and operational compliance monitoring."
-            cta="Industry Access"
-            accent="eco"
-            onClick={goIndustry}
-            delay={0.15}
-          />
+        <div className="flex justify-center max-w-5xl w-full">
+          <div className="w-full max-w-md">
+            <PortalCard
+              badge="Industry"
+              icon={Factory}
+              title="Industry Portal"
+              desc="Track water usage, reuse efficiency, AI insights, and operational compliance monitoring."
+              cta="Industry Access"
+              accent="eco"
+              onClick={goIndustry}
+              delay={0.15}
+            />
+          </div>
         </div>
 
         <div className="mt-12 flex items-center gap-6">
           <Link to="/" className="text-sm text-muted-foreground hover:text-foreground transition">← Back to Home</Link>
-          <button onClick={handleReset} className="text-sm text-danger/70 hover:text-danger transition flex items-center gap-1.5">
-            <RefreshCcw className="h-3.5 w-3.5" /> Reset Industry Setup
-          </button>
+          {/* <button onClick={handleReset} className="text-sm text-danger/70 hover:text-danger transition flex items-center gap-1.5">
+            <RefreshCcw className="h-3.5 w-3.5" /> 
+          </button> */}
         </div>
       </div>
 

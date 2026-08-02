@@ -1,5 +1,5 @@
-// Lightweight global store for HydroNexa state (theme, setup, auth)
 import { useEffect, useState } from "react";
+import { supabase } from "./supabase";
 
 const KEY = "hydronexa:v1";
 
@@ -16,12 +16,17 @@ export interface SetupData {
   dailyCapacity?: number;
   ctoLimit?: number;
   monthlyCtoLimit?: number;
+  ctoValidity?: string;
   reuseTarget?: number;
+  phRange?: string;
+  maxWaterTemp?: string;
+  consentStatus?: string;
   monitoringFrequency?: string;
   shiftTimings?: string;
   workingDays?: string;
   units?: number;
   waterSource?: string;
+  ctoCertificate?: string;
   benchmark?: string;
   alertSensitivity?: number;
   notifications?: string[];
@@ -43,6 +48,7 @@ export interface AppState {
   govAuthed: boolean;
   token: string | null; // JWT token
   setup?: SetupData;
+  adminAuthed?: boolean;
 }
 
 const initial: AppState = { users: {}, currentUserEmail: null, industryAuthed: false, govAuthed: false, token: null };
@@ -166,29 +172,63 @@ export function useAppState() {
 
   const loginUser = async (email: string, pw: string) => {
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: pw })
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: pw
       });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Login failed");
-      }
-      const data = await res.json();
       
+      if (error || !authData.user) {
+        throw new Error(error?.message || "Login failed");
+      }
+      
+      const token = authData.session.access_token;
+      
+      // Map lowercase to camelCase to fix data loaded from postgres
+      const mapSetup = (data: any) => {
+         if (!data) return {};
+         const mapping: Record<string, string> = {
+            industrytype: 'industryType',
+            plantscale: 'plantScale',
+            processtype: 'processType',
+            plantname: 'plantName',
+            dailycapacity: 'dailyCapacity',
+            ctolimit: 'ctoLimit',
+            monthlyctolimit: 'monthlyCtoLimit',
+            reusetarget: 'reuseTarget',
+            monitoringfrequency: 'monitoringFrequency',
+            shifttimings: 'shiftTimings',
+            workingdays: 'workingDays',
+            watersource: 'waterSource',
+            alertsensitivity: 'alertSensitivity',
+            aimonitoring: 'aiMonitoring',
+            compliancealerts: 'complianceAlerts',
+            sustainabilityreports: 'sustainabilityReports',
+            ctovalidity: 'ctoValidity',
+            phrange: 'phRange',
+            maxwatertemp: 'maxWaterTemp',
+            consentstatus: 'consentStatus'
+         };
+         const mapped = { ...data };
+         for (const key in data) {
+            if (mapping[key] && !mapped[mapping[key]]) {
+               mapped[mapping[key]] = data[key];
+            }
+         }
+         return mapped;
+      };
+
       // Fetch setup from backend
       const setupRes = await fetch('/api/setup', {
-        headers: { 'Authorization': `Bearer ${data.token}` }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-      const setupData = setupRes.ok ? await setupRes.json() : {};
+      const setupData = mapSetup(setupRes.ok ? await setupRes.json() : {});
 
       const cur = read();
       const next = {
         ...cur,
         currentUserEmail: email,
         industryAuthed: true,
-        token: data.token,
+        token: token,
         users: {
           ...cur.users,
           [email]: { password: pw, setup: { email, ...setupData } }
@@ -198,17 +238,58 @@ export function useAppState() {
       setState(next);
       return true;
     } catch (err: any) {
-      console.warn("Backend login failed, attempting local fallback:", err.message);
-      // Legacy local fallback
-      const cur = read();
-      const user = cur.users[email];
-      if (user && user.password === pw) {
-        const next = { ...cur, currentUserEmail: email, industryAuthed: true };
-        write(next);
-        setState(next);
-        return true;
-      }
-      throw new Error("Invalid credentials");
+      console.error("Login error:", err.message);
+      
+      // Try backend proxy if direct auth fails (for legacy fallback)
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password: pw })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const setupRes = await fetch('/api/setup', {
+            headers: { 'Authorization': `Bearer ${data.token}` }
+          });
+          
+          const mapSetup = (data: any) => {
+            if (!data) return {};
+            const mapping: Record<string, string> = {
+                industrytype: 'industryType', plantscale: 'plantScale', processtype: 'processType',
+                plantname: 'plantName', dailycapacity: 'dailyCapacity', ctolimit: 'ctoLimit',
+                monthlyctolimit: 'monthlyCtoLimit', reusetarget: 'reuseTarget', monitoringfrequency: 'monitoringFrequency',
+                shifttimings: 'shiftTimings', workingdays: 'workingDays', watersource: 'waterSource',
+                alertsensitivity: 'alertSensitivity', aimonitoring: 'aiMonitoring', compliancealerts: 'complianceAlerts',
+                sustainabilityreports: 'sustainabilityReports', ctovalidity: 'ctoValidity',
+                phrange: 'phRange', maxwatertemp: 'maxWaterTemp', consentstatus: 'consentStatus'
+            };
+            const mapped = { ...data };
+            for (const key in data) {
+                if (mapping[key] && !mapped[mapping[key]]) mapped[mapping[key]] = data[key];
+            }
+            return mapped;
+          };
+          
+          const setupData = mapSetup(setupRes.ok ? await setupRes.json() : {});
+          const cur = read();
+          const next = {
+            ...cur,
+            currentUserEmail: email,
+            industryAuthed: true,
+            token: data.token,
+            users: {
+              ...cur.users,
+              [email]: { password: pw, setup: { email, ...setupData } }
+            }
+          };
+          write(next);
+          setState(next);
+          return true;
+        }
+      } catch (fallbackErr) {}
+      
+      throw new Error(err.message || "Invalid credentials");
     }
   };
 
@@ -239,13 +320,62 @@ export function useAppState() {
     }
   };
 
+  const syncSetupFromServer = async () => {
+    const cur = read();
+    const email = cur.currentUserEmail;
+    if (!email || !cur.token) return;
+
+    try {
+      const res = await fetch('/api/setup', {
+        headers: { 'Authorization': `Bearer ${cur.token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        
+        const mapSetup = (data: any) => {
+          if (!data) return {};
+          const mapping: Record<string, string> = {
+              industrytype: 'industryType', plantscale: 'plantScale', processtype: 'processType',
+              plantname: 'plantName', dailycapacity: 'dailyCapacity', ctolimit: 'ctoLimit',
+              monthlyctolimit: 'monthlyCtoLimit', reusetarget: 'reuseTarget', monitoringfrequency: 'monitoringFrequency',
+              shifttimings: 'shiftTimings', workingdays: 'workingDays', watersource: 'waterSource',
+              alertsensitivity: 'alertSensitivity', aimonitoring: 'aiMonitoring', compliancealerts: 'complianceAlerts',
+              sustainabilityreports: 'sustainabilityReports', ctovalidity: 'ctoValidity',
+              phrange: 'phRange', maxwatertemp: 'maxWaterTemp', consentstatus: 'consentStatus'
+          };
+          const mapped = { ...data };
+          for (const key in data) {
+              if (mapping[key] && !mapped[mapping[key]]) mapped[mapping[key]] = data[key];
+          }
+          return mapped;
+        };
+
+        const setupData = mapSetup(data);
+        const user = cur.users[email] || { setup: {} };
+        const nextUser = { ...user, setup: { ...user.setup, ...setupData } };
+        
+        const next = {
+          ...cur,
+          users: {
+            ...cur.users,
+            [email]: nextUser
+          }
+        };
+        write(next);
+        setState(next);
+      }
+    } catch (e) {
+      console.error("Failed to sync setup from server", e);
+    }
+  };
+
   // Mimic legacy structure for minimal disruption, but dynamically compute the relevant setup.
   const state = {
     ...rawState,
     setup // dynamically override setup prop in state return value
   };
 
-  return { state, update, updateSetup, resetSetup, register, loginUser, rawState };
+  return { state, update, updateSetup, resetSetup, register, loginUser, syncSetupFromServer, rawState };
 }
 
 export const Industries: IndustryType[] = ["Textile", "Pulp & Paper", "Food Processing", "Steel & Metal", "Pharma"];

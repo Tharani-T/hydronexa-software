@@ -51,15 +51,17 @@ const team = [
 function LandingPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
-  const [message, setMessage] = useState("");
+  const [location, setLocation] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !message) {
-      setSubmitStatus({ type: "error", msg: "Please fill in all required fields." });
+    if (!name || !email || !location || !phone) {
+      const missing = [!name && 'Name', !email && 'Email', !location && 'Location', !phone && 'Phone'].filter(Boolean).join(', ');
+      setSubmitStatus({ type: "error", msg: `Please fill in: ${missing}` });
       return;
     }
     
@@ -69,15 +71,16 @@ function LandingPage() {
       const res = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, company, message })
+        body: JSON.stringify({ name, email, phone, company, message: location })
       });
       const data = await res.json();
       if (res.ok) {
         setSubmitStatus({ type: "success", msg: "Your message has been sent successfully!" });
         setName("");
         setEmail("");
+        setPhone("");
         setCompany("");
-        setMessage("");
+        setLocation("");
       } else {
         setSubmitStatus({ type: "error", msg: data.error || "Failed to send message." });
       }
@@ -118,17 +121,17 @@ function LandingPage() {
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
               <Link to="/portal" className="group inline-flex items-center gap-2 h-12 px-6 rounded-full gradient-cyan text-primary-foreground font-medium shadow-glow hover:scale-105 transition-transform">
-                View Dashboard <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition" />
+                Access Portal <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition" />
               </Link>
-              <Link to="/onboarding" className="inline-flex items-center gap-2 h-12 px-6 rounded-full glass border border-glass-border font-medium hover:border-cyan transition">
+              <a href="#contact" className="inline-flex items-center gap-2 h-12 px-6 rounded-full glass border border-glass-border font-medium hover:border-cyan transition">
                 Book Demo
-              </Link>
+              </a>
             </div>
-            <div className="mt-10 flex items-center gap-6 text-xs text-muted-foreground">
+            {/* <div className="mt-10 flex items-center gap-6 text-xs text-muted-foreground">
               <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-eco" /> ISO 14001 Aligned</div>
               <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-eco" /> CPCB Compliant</div>
               <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-eco" /> Edge AI</div>
-            </div>
+            </div> */}
           </motion.div>
 
           {/* Floating dashboard preview */}
@@ -377,22 +380,27 @@ function LandingPage() {
                 required 
               />
               <Input 
+                label="Phone" 
+                placeholder="+1 234 567 8900" 
+                type="tel" 
+                value={phone} 
+                onChange={(e) => setPhone(e.target.value)} 
+                required 
+              />
+              <Input 
                 label="Company" 
                 placeholder="Industrial Co." 
                 value={company} 
                 onChange={(e) => setCompany(e.target.value)} 
               />
-              <div>
-                <label className="text-xs uppercase tracking-wider text-muted-foreground">Message</label>
-                <textarea 
-                  rows={4} 
-                  placeholder="Tell us about your plant…" 
-                  className="mt-1 w-full rounded-xl glass border border-glass-border px-4 py-3 text-sm focus:border-cyan focus:outline-none transition" 
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  required
-                />
-              </div>
+
+              <Input 
+                label="Location"
+                placeholder="City, State, or Region" 
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                required
+              />
 
               {submitStatus && (
                 <div className={`p-4 rounded-xl text-sm border transition-all ${

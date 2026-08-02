@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PortalRouteImport } from './routes/portal'
+import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
+import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as GovernmentDashboardRouteImport } from './routes/government.dashboard'
 import { Route as GovernmentLoginRouteImport } from './routes/government.login'
 import { Route as IndustryDashboardRouteImport } from './routes/industry.dashboard'
@@ -30,6 +32,16 @@ const OnboardingRoute = OnboardingRouteImport.update({
 const PortalRoute = PortalRouteImport.update({
   id: '/portal',
   path: '/portal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminDashboardRoute = AdminDashboardRouteImport.update({
+  id: '/admin/dashboard',
+  path: '/admin/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/admin/login',
+  path: '/admin/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GovernmentDashboardRoute = GovernmentDashboardRouteImport.update({
@@ -57,6 +69,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/onboarding': typeof OnboardingRoute
   '/portal': typeof PortalRoute
+  '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/login': typeof AdminLoginRoute
   '/government/dashboard': typeof GovernmentDashboardRoute
   '/government/login': typeof GovernmentLoginRoute
   '/industry/dashboard': typeof IndustryDashboardRoute
@@ -66,6 +80,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/onboarding': typeof OnboardingRoute
   '/portal': typeof PortalRoute
+  '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/login': typeof AdminLoginRoute
   '/government/dashboard': typeof GovernmentDashboardRoute
   '/government/login': typeof GovernmentLoginRoute
   '/industry/dashboard': typeof IndustryDashboardRoute
@@ -76,6 +92,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/onboarding': typeof OnboardingRoute
   '/portal': typeof PortalRoute
+  '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/login': typeof AdminLoginRoute
   '/government/dashboard': typeof GovernmentDashboardRoute
   '/government/login': typeof GovernmentLoginRoute
   '/industry/dashboard': typeof IndustryDashboardRoute
@@ -87,6 +105,8 @@ export interface FileRouteTypes {
     | '/'
     | '/onboarding'
     | '/portal'
+    | '/admin/dashboard'
+    | '/admin/login'
     | '/government/dashboard'
     | '/government/login'
     | '/industry/dashboard'
@@ -96,6 +116,8 @@ export interface FileRouteTypes {
     | '/'
     | '/onboarding'
     | '/portal'
+    | '/admin/dashboard'
+    | '/admin/login'
     | '/government/dashboard'
     | '/government/login'
     | '/industry/dashboard'
@@ -105,6 +127,8 @@ export interface FileRouteTypes {
     | '/'
     | '/onboarding'
     | '/portal'
+    | '/admin/dashboard'
+    | '/admin/login'
     | '/government/dashboard'
     | '/government/login'
     | '/industry/dashboard'
@@ -115,6 +139,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   OnboardingRoute: typeof OnboardingRoute
   PortalRoute: typeof PortalRoute
+  AdminDashboardRoute: typeof AdminDashboardRoute
+  AdminLoginRoute: typeof AdminLoginRoute
   GovernmentDashboardRoute: typeof GovernmentDashboardRoute
   GovernmentLoginRoute: typeof GovernmentLoginRoute
   IndustryDashboardRoute: typeof IndustryDashboardRoute
@@ -142,6 +168,20 @@ declare module '@tanstack/react-router' {
       path: '/portal'
       fullPath: '/portal'
       preLoaderRoute: typeof PortalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/dashboard': {
+      id: '/admin/dashboard'
+      path: '/admin/dashboard'
+      fullPath: '/admin/dashboard'
+      preLoaderRoute: typeof AdminDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/admin/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/government/dashboard': {
@@ -179,6 +219,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   OnboardingRoute: OnboardingRoute,
   PortalRoute: PortalRoute,
+  AdminDashboardRoute: AdminDashboardRoute,
+  AdminLoginRoute: AdminLoginRoute,
   GovernmentDashboardRoute: GovernmentDashboardRoute,
   GovernmentLoginRoute: GovernmentLoginRoute,
   IndustryDashboardRoute: IndustryDashboardRoute,

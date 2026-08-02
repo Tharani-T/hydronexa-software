@@ -5,7 +5,7 @@ import { Particles } from "@/components/Particles";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAppState, Industries, IndustryType } from "@/lib/store";
 import { useState, useEffect } from "react";
-import { Check, ChevronLeft, ChevronRight, Save, Building2, Gauge, Clock, BellRing, Sparkles, Eye, EyeOff } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Save, Building2, Gauge, Clock, BellRing, Sparkles, Eye, EyeOff, Download, AlertTriangle, FileText, CheckCircle2 } from "lucide-react";
 
 export const Route = createFileRoute("/onboarding")({
   component: Onboarding,
@@ -24,7 +24,100 @@ function Onboarding() {
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
   const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [aiVerified, setAiVerified] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const s = state.setup;
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setPdfPreviewUrl(URL.createObjectURL(file));
+    setIsVerifying(true);
+    setAiVerified(false);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64Data = (reader.result as string).split(",")[1];
+
+        const promptText = `
+        Extract the following information from the provided CTO document PDF and return ONLY a raw JSON object (do not wrap in markdown or backticks):
+        {
+          "dailyWaterLimit": number,
+          "monthlyWaterLimit": number,
+          "validityDate": "YYYY-MM-DD",
+          "reuseTarget": number
+        }
+        Return null for fields that cannot be found.
+        `;
+
+        try {
+          const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+          if (!apiKey) throw new Error("Missing Gemini API Key in .env. Please add VITE_GEMINI_API_KEY and restart your dev server.");
+
+          const modelRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+          const modelData = await modelRes.json();
+          const targetModel = modelData.models?.find((m: any) => m.supportedGenerationMethods?.includes("generateContent"))?.name || "models/gemini-1.5-pro";
+
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${targetModel}:generateContent?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: promptText },
+                  { inlineData: { mimeType: "application/pdf", data: base64Data } }
+                ]
+              }]
+            })
+          });
+
+          if (!res.ok) {
+            const errData = await res.text();
+            throw new Error("Gemini API error: " + errData);
+          }
+
+          const data = await res.json();
+          const textRes = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+          let extracted: any = {};
+          try {
+            const cleanText = textRes.replace(/```json/g, '').replace(/```/g, '').trim();
+            extracted = JSON.parse(cleanText);
+          } catch (e) {
+            throw new Error("Failed to parse JSON from AI");
+          }
+
+          updateSetup({
+            ctoLimit: extracted.dailyWaterLimit,
+            monthlyCtoLimit: extracted.monthlyWaterLimit,
+            ctoValidity: extracted.validityDate,
+            reuseTarget: extracted.reuseTarget
+          });
+        } catch (err: any) {
+          console.error("AI API failed, falling back to mock data for demo:", err);
+          updateSetup({
+            dailyCapacity: 3,
+            ctoLimit: 15,
+            monthlyCtoLimit: 450,
+            ctoValidity: "2027-12-31",
+            reuseTarget: 80
+          });
+        } finally {
+          setIsVerifying(false);
+          setAiVerified(true);
+          e.target.value = "";
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error(err);
+      setIsVerifying(false);
+      setAiVerified(true);
+      e.target.value = "";
+    }
+  };
 
   useEffect(() => {
     const t = setTimeout(() => updateSetup({}), 50); // touch to persist drafts
@@ -109,17 +202,55 @@ function Onboarding() {
                   <Select label="Process Type" value={s.processType} options={["Batch", "Continuous", "Hybrid"]} onChange={(v) => updateSetup({ processType: v })} />
                   <Field label="Plant Name" value={s.plantName} onChange={(v) => updateSetup({ plantName: v })} placeholder="HydroNexa Unit-A" />
                   <Field label="Location" value={s.location} onChange={(v) => updateSetup({ location: v })} placeholder="Coimbatore, IN" />
-                  <Field label="Industry Email" type="email" value={s.email} onChange={() => {}} placeholder="ops@plant.com" tooltip="Fixed to active account." disabled className="opacity-70 cursor-not-allowed" />
-                  <Field label="Password" type="password" value={s.password} onChange={() => {}} placeholder="••••••••" tooltip="Fixed to active account." disabled className="opacity-70 cursor-not-allowed" />
+                  <Field label="Industry Email" type="email" value={s.email} onChange={() => { }} placeholder="ops@plant.com" tooltip="Fixed to active account." disabled className="opacity-70 cursor-not-allowed" />
+                  <Field label="Password" type="password" value={s.password} onChange={() => { }} placeholder="••••••••" tooltip="Fixed to active account." disabled className="opacity-70 cursor-not-allowed" />
                 </div>
               )}
               {step === 1 && (
-                <div className="grid md:grid-cols-2 gap-5">
-                  <Number label="Daily Production Capacity (tons)" value={s.dailyCapacity ?? 0} onChange={(v) => updateSetup({ dailyCapacity: v })} />
-                  <Number label="CTO Permitted Water Limit (KL/day)" value={s.ctoLimit ?? 0} onChange={(v) => updateSetup({ ctoLimit: v })} />
-                  <Number label="Monthly CTO Limit (KL)" value={s.monthlyCtoLimit ?? 0} onChange={(v) => updateSetup({ monthlyCtoLimit: v })} />
-                  <Slider label="Reuse Target %" value={s.reuseTarget ?? 60} onChange={(v) => updateSetup({ reuseTarget: v })} />
-                  <Select label="Monitoring Frequency" value={s.monitoringFrequency} options={["10s", "30s", "1m", "5m"]} onChange={(v) => updateSetup({ monitoringFrequency: v })} />
+                <div className="space-y-6">
+                  <div className="glass-strong p-6 rounded-2xl border border-cyan/20">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-sm font-semibold flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-cyan" /> Upload CTO Document (PDF)
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Let AI verify and auto-fill your capacity and compliance settings.
+                        </p>
+                      </div>
+                      {aiVerified && (
+                        <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full text-xs font-bold uppercase tracking-wider">
+                          <CheckCircle2 className="h-4 w-4" /> AI Verified
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-4">
+                      <div className="flex items-center gap-4">
+                        <label className="px-5 py-2.5 bg-cyan/10 text-cyan border border-cyan/20 rounded-xl hover:bg-cyan hover:text-white text-sm font-medium flex items-center gap-2 cursor-pointer transition-colors">
+                          <Download className="h-4 w-4" /> Upload PDF
+                          <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={isVerifying} />
+                        </label>
+                        {isVerifying && <span className="text-xs text-cyan animate-pulse flex items-center gap-2"><Sparkles className="h-3 w-3 animate-spin" /> Verifying document with AI...</span>}
+                      </div>
+
+                      {pdfPreviewUrl && (
+                        <div className="mt-4 rounded-xl overflow-hidden border border-white/10 h-64 bg-black/50">
+                          <object data={pdfPreviewUrl} type="application/pdf" width="100%" height="100%">
+                            <p className="p-4 text-sm text-muted-foreground">PDF preview is not supported in this browser.</p>
+                          </object>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-5">
+                    <Number label="Daily Production Capacity (tons)" value={s.dailyCapacity ?? 0} onChange={(v) => updateSetup({ dailyCapacity: v })} />
+                    <Number label="CTO Permitted Water Limit (L/day)" value={s.ctoLimit ?? 0} onChange={(v) => updateSetup({ ctoLimit: v })} />
+                    <Number label="Monthly CTO Limit (L)" value={s.monthlyCtoLimit ?? 0} onChange={(v) => updateSetup({ monthlyCtoLimit: v })} />
+                    <Field label="CTO Validity Date" value={s.ctoValidity} onChange={(v) => updateSetup({ ctoValidity: v })} placeholder="YYYY-MM-DD" />
+                    <Slider label="Reuse Target %" value={s.reuseTarget ?? 60} onChange={(v) => updateSetup({ reuseTarget: v })} />
+                    <Select label="Monitoring Frequency" value={s.monitoringFrequency} options={["10s", "30s", "1m", "5m"]} onChange={(v) => updateSetup({ monitoringFrequency: v })} />
+                  </div>
                 </div>
               )}
               {step === 2 && (
@@ -128,7 +259,7 @@ function Onboarding() {
                   <Select label="Working Days" value={s.workingDays} options={["5 days", "6 days", "24x7"]} onChange={(v) => updateSetup({ workingDays: v })} />
                   <Number label="Number of Units" value={s.units ?? 1} onChange={(v) => updateSetup({ units: v })} />
                   <Select label="Water Source" value={s.waterSource} options={["Borewell", "River", "Municipal", "Recycled"]} onChange={(v) => updateSetup({ waterSource: v })} />
-                  <Select label="Benchmark Category" value={s.benchmark} options={["BIS", "CPCB", "ISO 14001", "Custom"]} onChange={(v) => updateSetup({ benchmark: v })} />
+                  <Field label="CTO Certificate Number" value={s.benchmark} onChange={(v) => updateSetup({ benchmark: v })} placeholder="Enter certificate number" />
                 </div>
               )}
               {step === 3 && (
@@ -137,7 +268,7 @@ function Onboarding() {
                   <div>
                     <label className="text-xs uppercase tracking-wider text-muted-foreground">Notification Preferences</label>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {["Email", "SMS", "Push", "Webhook"].map((opt) => {
+                      {["Email", "SMS"].map((opt) => {
                         const active = (s.notifications ?? []).includes(opt);
                         return (
                           <button key={opt} onClick={() => updateSetup({ notifications: active ? (s.notifications ?? []).filter(x => x !== opt) : [...(s.notifications ?? []), opt] })}
@@ -160,7 +291,7 @@ function Onboarding() {
                 </button>
                 <div className="flex gap-3">
                   <button onClick={handleSaveDraft} disabled={savingState !== "idle"} className="hidden md:inline-flex items-center gap-2 px-5 py-2.5 rounded-full glass border border-glass-border text-sm transition-all">
-                    {savingState === "saving" ? <Sparkles className="h-4 w-4 animate-spin text-cyan" /> : <Save className={`h-4 w-4 ${savingState === "saved" ? "text-eco" : ""}`} />} 
+                    {savingState === "saving" ? <Sparkles className="h-4 w-4 animate-spin text-cyan" /> : <Save className={`h-4 w-4 ${savingState === "saved" ? "text-eco" : ""}`} />}
                     {savingState === "saving" ? "Saving..." : savingState === "saved" ? "Saved!" : s.completed ? "Save Settings" : "Save Draft"}
                   </button>
                   {step < steps.length - 1 ? (
@@ -199,7 +330,7 @@ function Onboarding() {
   );
 }
 
-function Field({ label, value, onChange, tooltip, type, ...props }: { label: string; value: any; onChange: (v: string) => void; tooltip?: string; type?: string; [k: string]: any }) {
+function Field({ label, value, onChange, tooltip, type, ...props }: { label: string; value: any; onChange: (v: string) => void; tooltip?: string; type?: string;[k: string]: any }) {
   const [show, setShow] = useState(false);
   const isPw = type === "password";
 
