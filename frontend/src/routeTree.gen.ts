@@ -14,6 +14,7 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
+import { Route as GovernmentIndexRouteImport } from './routes/government.index'
 import { Route as GovernmentDashboardRouteImport } from './routes/government.dashboard'
 import { Route as GovernmentLoginRouteImport } from './routes/government.login'
 import { Route as IndustryDashboardRouteImport } from './routes/industry.dashboard'
@@ -42,6 +43,11 @@ const AdminDashboardRoute = AdminDashboardRouteImport.update({
 const AdminLoginRoute = AdminLoginRouteImport.update({
   id: '/admin/login',
   path: '/admin/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GovernmentIndexRoute = GovernmentIndexRouteImport.update({
+  id: '/government/',
+  path: '/government/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GovernmentDashboardRoute = GovernmentDashboardRouteImport.update({
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/government/login': typeof GovernmentLoginRoute
   '/industry/dashboard': typeof IndustryDashboardRoute
   '/industry/login': typeof IndustryLoginRoute
+  '/government/': typeof GovernmentIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByTo {
   '/government/login': typeof GovernmentLoginRoute
   '/industry/dashboard': typeof IndustryDashboardRoute
   '/industry/login': typeof IndustryLoginRoute
+  '/government': typeof GovernmentIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/government/login': typeof GovernmentLoginRoute
   '/industry/dashboard': typeof IndustryDashboardRoute
   '/industry/login': typeof IndustryLoginRoute
+  '/government/': typeof GovernmentIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
     | '/government/login'
     | '/industry/dashboard'
     | '/industry/login'
+    | '/government/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/government/login'
     | '/industry/dashboard'
     | '/industry/login'
+    | '/government'
   id:
     | '__root__'
     | '/'
@@ -133,6 +144,7 @@ export interface FileRouteTypes {
     | '/government/login'
     | '/industry/dashboard'
     | '/industry/login'
+    | '/government/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -145,6 +157,7 @@ export interface RootRouteChildren {
   GovernmentLoginRoute: typeof GovernmentLoginRoute
   IndustryDashboardRoute: typeof IndustryDashboardRoute
   IndustryLoginRoute: typeof IndustryLoginRoute
+  GovernmentIndexRoute: typeof GovernmentIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -182,6 +195,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/login'
       fullPath: '/admin/login'
       preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/government/': {
+      id: '/government/'
+      path: '/government'
+      fullPath: '/government/'
+      preLoaderRoute: typeof GovernmentIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/government/dashboard': {
@@ -225,6 +245,7 @@ const rootRouteChildren: RootRouteChildren = {
   GovernmentLoginRoute: GovernmentLoginRoute,
   IndustryDashboardRoute: IndustryDashboardRoute,
   IndustryLoginRoute: IndustryLoginRoute,
+  GovernmentIndexRoute: GovernmentIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
