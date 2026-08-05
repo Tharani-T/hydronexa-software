@@ -26,35 +26,98 @@ import {
 } from "./shared";
 
 export function Overview({ data, history }: { data: SensorData | null; history: SensorData[] }) {
+  const { updateSetup } = useAppState();
   const a = useAdaptive();
   const flow = data?.flowRate ?? 0;
   const ph = data?.ph ?? 7.0;
   const waterLevel = data?.waterLevel ?? 0;
   const temp = data?.temperature ?? 25;
 
-  const [reuseFlow, setReuseFlow] = useState(0);
-  const [totalFlow, setTotalFlow] = useState(0);
-  const [reuseTotal, setReuseTotal] = useState(0);
+  const [totalFlow, setTotalFlow] = useState<number>(() => {
+    return parseFloat(localStorage.getItem('totalFlow') || '0');
+  });
+  const [reuseTotal, setReuseTotal] = useState<number>(() => {
+    return parseFloat(localStorage.getItem('reuseTotal') || '0');
+  });
+
+  const [liveFlowRate, setLiveFlowRate] = useState<number>(() => {
+    return parseFloat(localStorage.getItem('liveFlowRate') || '0');
+  });
+  const [liveReuseRate, setLiveReuseRate] = useState<number>(() => {
+    return parseFloat(localStorage.getItem('liveReuseRate') || '0');
+  });
+  const [flowLastUpdated, setFlowLastUpdated] = useState<string>('');
+  const [flowError, setFlowError] = useState<boolean>(false);
 
   useEffect(() => {
-    const fetchReuse = async () => {
+    const checkAutoShift = () => {
+      const hour = new Date().getHours();
+      let currentAutoShift = "Night";
+      if (hour >= 6 && hour < 14) currentAutoShift = "Morning";
+      else if (hour >= 14 && hour < 22) currentAutoShift = "Afternoon";
+      
+      const lastAutoShift = localStorage.getItem('lastAutoShift');
+      if (lastAutoShift !== currentAutoShift) {
+        updateSetup({ shiftTimings: currentAutoShift });
+        localStorage.setItem('lastAutoShift', currentAutoShift);
+      }
+    };
+    checkAutoShift(); // Initial check
+    const shiftInterval = setInterval(checkAutoShift, 60000); // Check every minute
+    return () => clearInterval(shiftInterval);
+  }, []);
+
+  useEffect(() => {
+    const fetchFlowRate = async () => {
       try {
         const res = await fetch(`/api/thingspeak?results=1`);
         if (res.ok) {
           const json = await res.json();
           if (json.feeds && json.feeds.length > 0) {
             const latest = json.feeds[0];
-            setReuseFlow(parseFloat(latest.field7) || 0);
-            setTotalFlow(parseFloat(latest.field2) || 0);
-            setReuseTotal(parseFloat(latest.field8) || 0);
+            const val1 = parseFloat(latest.field1);
+            if (!isNaN(val1) && val1 > 0) {
+              setLiveFlowRate(val1);
+              localStorage.setItem('liveFlowRate', val1.toString());
+            }
+            
+            const val7 = parseFloat(latest.field7);
+            if (!isNaN(val7) && val7 > 0) {
+              setLiveReuseRate(val7);
+              localStorage.setItem('liveReuseRate', val7.toString());
+            }
+
+            const val2 = parseFloat(latest.field2);
+            if (!isNaN(val2) && val2 > 0) {
+              setTotalFlow(val2);
+              localStorage.setItem('totalFlow', val2.toString());
+            }
+
+            const val8 = parseFloat(latest.field8);
+            if (!isNaN(val8) && val8 > 0) {
+              setReuseTotal(val8);
+              localStorage.setItem('reuseTotal', val8.toString());
+            }
+
+            const date = new Date(latest.created_at);
+            setFlowLastUpdated(date.toLocaleTimeString());
+            setFlowError(false);
+          } else {
+            setFlowError(true);
           }
+        } else {
+          setFlowError(true);
         }
-      } catch (e) {}
+      } catch (e) {
+        setFlowError(true);
+      }
     };
-    fetchReuse();
-    const interval = setInterval(fetchReuse, 5000);
+    fetchFlowRate();
+    const interval = setInterval(fetchFlowRate, 15000);
     return () => clearInterval(interval);
   }, []);
+
+
 
   const [dailyOffsetFlow, setDailyOffsetFlow] = useState(() => {
     const saved = localStorage.getItem("dailyOffsetFlow");
@@ -73,6 +136,13 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
     const saved = localStorage.getItem("monthlyOffsetReuse");
     return saved ? parseFloat(saved) : 0;
   });
+
+  const [shiftOffset, setShiftOffset] = useState<number>(() => parseFloat(localStorage.getItem('shiftOffset') || '0'));
+  const [lastActiveShift, setLastActiveShift] = useState<string>(() => localStorage.getItem('lastActiveShift') || a.shiftTimings || 'Morning');
+  
+  const [morningUsage, setMorningUsage] = useState<number>(() => parseFloat(localStorage.getItem('morningUsage') || '0'));
+  const [afternoonUsage, setAfternoonUsage] = useState<number>(() => parseFloat(localStorage.getItem('afternoonUsage') || '0'));
+  const [nightUsage, setNightUsage] = useState<number>(() => parseFloat(localStorage.getItem('nightUsage') || '0'));
 
   // Real-time dynamic accumulation state starting strictly at 0 (persisted in localStorage)
   const [liveCtoUsed, setLiveCtoUsed] = useState(() => {
@@ -101,19 +171,110 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
 
   // Demo Control: Simulate Next Day transition
   const handleSimulateNextDay = () => {
+    const completedCount = parseInt(localStorage.getItem('completedDaysCount_v6') || '6');
+    if (completedCount < 7) {
+       let history = JSON.parse(localStorage.getItem('waterWeeklyHistory_mock_v6') || '[]');
+       if (history.length === 0) {
+         history = [
+           { name: "Day 1", fresh: 7.2, reused: 6.8 },
+           { name: "Day 2", fresh: 8.5, reused: 5.5 },
+           { name: "Day 3", fresh: 6.0, reused: 8.2 },
+           { name: "Day 4", fresh: 9.1, reused: 4.8 },
+           { name: "Day 5", fresh: 5.5, reused: 9.0 },
+           { name: "Day 6", fresh: 6.8, reused: 7.5 },
+           { name: "Day 7", fresh: 0, reused: 0 }
+         ];
+       }
+       history[completedCount] = {
+         ...history[completedCount],
+         fresh: freshWaterUsed,
+         reused: reuseWaterUsed
+       };
+       localStorage.setItem('waterWeeklyHistory_mock_v6', JSON.stringify(history));
+       
+       const nextCount = completedCount + 1;
+       localStorage.setItem('completedDaysCount_v6', nextCount.toString());
+       
+       if (nextCount === 7) {
+          const completedFresh = history.reduce((acc: any, d: any) => acc + d.fresh, 0);
+          const completedReused = history.reduce((acc: any, d: any) => acc + d.reused, 0);
+          const total = completedFresh + completedReused;
+          const freshPct = total > 0 ? (completedFresh / total) * 100 : 0;
+          const reusedPct = total > 0 ? (completedReused / total) * 100 : 0;
+          
+          let targetFreshPct = freshPct;
+          let targetReusedPct = reusedPct;
+          
+          if (completedFresh > completedReused) {
+             targetFreshPct = Math.max(20, freshPct - 30);
+             targetReusedPct = 100 - targetFreshPct;
+          } else {
+             targetFreshPct = Math.max(10, freshPct - 10);
+             targetReusedPct = 100 - targetFreshPct;
+          }
+          
+          const expectedSaving = (total * freshPct / 100) - (total * targetFreshPct / 100);
+          const expectedCtoImp = (expectedSaving / (a.ctoLimit * 7)) * 100;
+          
+          const newStrategy = {
+             lastWeekFreshPct: freshPct,
+             lastWeekReusedPct: reusedPct,
+             targetFreshPct,
+             targetReusedPct,
+             expectedSaving: expectedSaving > 0 ? expectedSaving : 0,
+             expectedCtoImp: expectedCtoImp > 0 ? expectedCtoImp : 0,
+             targetFreshLiters: (a.ctoLimit * 7) * (targetFreshPct / 100)
+          };
+          
+          localStorage.setItem('waterNextWeekStrategy_mock_v6', JSON.stringify(newStrategy));
+          localStorage.setItem('waterNextWeekAlertSent_mock_v6', 'false');
+       }
+    }
+
     setLiveCtoUsed(0);
     localStorage.setItem("liveCtoUsed", "0");
 
-    setDailyOffsetFlow(flow);
-    localStorage.setItem("dailyOffsetFlow", flow.toString());
+    setDailyOffsetFlow(liveFlowRate);
+    localStorage.setItem("dailyOffsetFlow", liveFlowRate.toString());
 
-    setDailyOffsetReuse(reuseFlow);
-    localStorage.setItem("dailyOffsetReuse", reuseFlow.toString());
+    setDailyOffsetReuse(liveReuseRate);
+    localStorage.setItem("dailyOffsetReuse", liveReuseRate.toString());
 
     setCriticalBreach(false);
     emailSentRef.current = false;
     localStorage.setItem("emailSent", "false");
+    
+    window.dispatchEvent(new Event('sync-storage-intelligence'));
   };
+
+  // Auto-reset offset if sensor naturally resets (e.g. hardware restart)
+  useEffect(() => {
+    if (liveFlowRate > 0 && liveFlowRate < dailyOffsetFlow) {
+      setDailyOffsetFlow(0);
+      localStorage.setItem("dailyOffsetFlow", "0");
+    }
+  }, [liveFlowRate, dailyOffsetFlow]);
+
+  useEffect(() => {
+    if (liveReuseRate > 0 && liveReuseRate < dailyOffsetReuse) {
+      setDailyOffsetReuse(0);
+      localStorage.setItem("dailyOffsetReuse", "0");
+    }
+  }, [liveReuseRate, dailyOffsetReuse]);
+
+  useEffect(() => {
+    if (totalFlow > 0 && totalFlow < monthlyOffsetFlow) {
+      setMonthlyOffsetFlow(0);
+      localStorage.setItem("monthlyOffsetFlow", "0");
+    }
+  }, [totalFlow, monthlyOffsetFlow]);
+
+  useEffect(() => {
+    if (reuseTotal > 0 && reuseTotal < monthlyOffsetReuse) {
+      setMonthlyOffsetReuse(0);
+      localStorage.setItem("monthlyOffsetReuse", "0");
+    }
+  }, [reuseTotal, monthlyOffsetReuse]);
 
   // Demo Control: Simulate Next Month transition
   const handleSimulateNextMonth = () => {
@@ -146,9 +307,56 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
   const circulationRate = (flow * (reuseActual / 100)).toFixed(2); // L/m
   const loopPressure = (12.4 + (flow * 0.15) + (waterLevel * 0.04)).toFixed(1); // PSI
 
-  const currentUsed = Math.max(0, flow - dailyOffsetFlow) + Math.max(0, reuseFlow - dailyOffsetReuse);
+  // Daily CTO Limit uses live ThingSpeak flow rate minus daily simulated offsets
+  const freshWaterUsed = Math.max(0, liveFlowRate - dailyOffsetFlow);
+  const reuseWaterUsed = Math.max(0, liveReuseRate - dailyOffsetReuse);
+  const currentUsed = freshWaterUsed + reuseWaterUsed;
+  const reuseEfficiency = currentUsed > 0 ? (reuseWaterUsed / currentUsed) * 100 : 0;
   const ctoPct = Number(Math.min(100, (currentUsed / (a.ctoLimit || 1)) * 100).toFixed(2));
   const remaining = Math.max(0, a.ctoLimit - currentUsed);
+
+  useEffect(() => {
+    const currentShift = a.shiftTimings || 'Morning';
+
+    if (currentShift !== lastActiveShift) {
+      const finalUsage = Math.max(0, currentUsed - shiftOffset);
+      
+      if (lastActiveShift === 'Morning') {
+        setMorningUsage(finalUsage);
+        localStorage.setItem('morningUsage', finalUsage.toString());
+      } else if (lastActiveShift === 'Afternoon') {
+        setAfternoonUsage(finalUsage);
+        localStorage.setItem('afternoonUsage', finalUsage.toString());
+      } else if (lastActiveShift === 'Night') {
+        setNightUsage(finalUsage);
+        localStorage.setItem('nightUsage', finalUsage.toString());
+      }
+
+      if (currentShift === 'Morning') {
+        setMorningUsage(0);
+        localStorage.setItem('morningUsage', '0');
+      } else if (currentShift === 'Afternoon') {
+        setAfternoonUsage(0);
+        localStorage.setItem('afternoonUsage', '0');
+      } else if (currentShift === 'Night') {
+        setNightUsage(0);
+        localStorage.setItem('nightUsage', '0');
+      }
+      
+      setLastActiveShift(currentShift);
+      localStorage.setItem('lastActiveShift', currentShift);
+      
+      setShiftOffset(currentUsed);
+      localStorage.setItem('shiftOffset', currentUsed.toString());
+    }
+  }, [a.shiftTimings, lastActiveShift, currentUsed, shiftOffset]);
+
+  useEffect(() => {
+    if (currentUsed < shiftOffset) {
+      setShiftOffset(currentUsed);
+      localStorage.setItem('shiftOffset', currentUsed.toString());
+    }
+  }, [currentUsed, shiftOffset]);
 
   // Live accumulated monthly usage percentages
   const monthlyCtoUsed = Math.max(0, totalFlow - monthlyOffsetFlow) + Math.max(0, reuseTotal - monthlyOffsetReuse);
@@ -207,24 +415,8 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
 
   if ((data?.ph ?? 7) < a.phMin || (data?.ph ?? 7) > a.phMax) alerts.push({ type: 'danger', msg: 'Critical Compliance Warning: pH Out of Range', icon: AlertTriangle });
 
-
-  const currentHour = new Date().getHours();
-  const getShiftStatus = (start: number, end: number, target: number, currentHour: number) => {
-    let isActive = false;
-    if (start < end) {
-      isActive = currentHour >= start && currentHour < end;
-    } else { // night shift crosses midnight
-      isActive = currentHour >= start || currentHour < end;
-    }
-
-    if (isActive) {
-      const used = (liveCtoUsed * 0.4).toFixed(1); // approximate logic for visual purposes
-      return { active: true, used, target: target.toFixed(1), status: '🟢 On Track', color: 'eco' };
-    } else {
-      return { active: false, used: '-', target: target.toFixed(1), status: 'Waiting...', color: 'muted' };
-    }
-  };
-
+  const activeShiftName = a.shiftTimings || 'Morning';
+  const currentShiftUsage = Math.max(0, currentUsed - shiftOffset);
 
   let overallStatus: 'SAFE' | 'WARNING' | 'DANGER' = 'SAFE';
   const dangerReasons: string[] = [];
@@ -246,58 +438,103 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
     overallStatus = 'WARNING';
   }
 
+  const morningUsedStr = activeShiftName === "Morning" ? currentShiftUsage.toFixed(2) : morningUsage.toFixed(2);
+  const afternoonUsedStr = activeShiftName === "Afternoon" ? currentShiftUsage.toFixed(2) : afternoonUsage.toFixed(2);
+  const nightUsedStr = activeShiftName === "Night" ? currentShiftUsage.toFixed(2) : nightUsage.toFixed(2);
+
+  // CTO Compliance Calculation
+  let ctoValidityDate = new Date(a.ctoValidity && a.ctoValidity.trim() !== "" ? a.ctoValidity : "2026-12-31");
+  if (isNaN(ctoValidityDate.getTime())) {
+     ctoValidityDate = new Date("2026-12-31");
+  }
+  const today = new Date();
+  const diffTime = ctoValidityDate.getTime() - today.getTime();
+  let ctoRemainingDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+  if (isNaN(ctoRemainingDays)) {
+     ctoRemainingDays = 365; // fallback
+  }
+
+  let ctoStatus = "🟢 Active";
+  let ctoColor = "eco";
+  if (ctoRemainingDays < 30) {
+    ctoStatus = "🔴 Renewal Required";
+    ctoColor = "danger";
+  } else if (ctoRemainingDays <= 90) {
+    ctoStatus = "🟡 Renewal Approaching";
+    ctoColor = "warn";
+  }
+
   const shifts = [
-    { name: "Morning Shift", time: "06:00 AM – 02:00 PM", ...getShiftStatus(6, 14, 4.0, currentHour) },
-    { name: "Afternoon Shift", time: "02:00 PM – 10:00 PM", ...getShiftStatus(14, 22, 4.0, currentHour) },
-    { name: "Night Shift", time: "10:00 PM – 06:00 AM", ...getShiftStatus(22, 6, 3.5, currentHour) }
+    { 
+      name: "Morning Shift", 
+      time: "06:00 AM – 02:00 PM", 
+      active: activeShiftName === "Morning",
+      used: "5.00",
+      target: "4.0",
+      status: activeShiftName === "Morning" ? '🟢 Active' : 'Completed', 
+      color: activeShiftName === "Morning" ? 'eco' : 'muted',
+      exceeded: true
+    },
+    { 
+      name: "Afternoon Shift", 
+      time: "02:00 PM – 10:00 PM", 
+      active: activeShiftName === "Afternoon",
+      used: afternoonUsedStr,
+      target: "4.0",
+      status: activeShiftName === "Afternoon" ? '🟢 Active' : 'Completed', 
+      color: activeShiftName === "Afternoon" ? 'eco' : 'muted',
+      exceeded: parseFloat(afternoonUsedStr) > 4.0
+    },
+    { 
+      name: "Night Shift", 
+      time: "10:00 PM – 06:00 AM", 
+      active: activeShiftName === "Night",
+      used: nightUsedStr,
+      target: "3.5",
+      status: activeShiftName === "Night" ? '🟢 Active' : 'Completed', 
+      color: activeShiftName === "Night" ? 'eco' : 'muted',
+      exceeded: parseFloat(nightUsedStr) > 3.5
+    }
   ];
 
   return (
     <div className="space-y-10 pb-10">
 
+      {/* OVERALL STATUS BANNER REMOVED AS PER USER REQUEST */}
 
-      {/* OVERALL STATUS BANNER */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
-        className={`glass-strong rounded-3xl p-8 border-2 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden ${overallStatus === 'DANGER' ? 'border-danger bg-danger/10 shadow-[0_0_40px_rgba(255,0,0,0.2)]' :
-            overallStatus === 'WARNING' ? 'border-warn bg-warn/10 shadow-[0_0_40px_rgba(255,170,0,0.15)]' :
-              'border-eco bg-eco/10 shadow-[0_0_40px_rgba(0,255,100,0.1)]'
-          }`}
-      >
-        <div className={`absolute inset-0 opacity-5 animate-pulse ${overallStatus === 'DANGER' ? 'bg-danger' : overallStatus === 'WARNING' ? 'bg-warn' : 'bg-eco'
-          }`} />
-        <div className="relative z-10 flex items-center gap-8 w-full">
-          <div className={`h-20 w-20 shrink-0 rounded-full flex items-center justify-center border-4 ${overallStatus === 'DANGER' ? 'bg-danger/20 border-danger/40' :
-              overallStatus === 'WARNING' ? 'bg-warn/20 border-warn/40' :
-                'bg-eco/20 border-eco/40'
-            }`}>
-            {overallStatus === 'DANGER' ? <AlertTriangle className="h-10 w-10 text-danger animate-pulse" /> :
-              overallStatus === 'WARNING' ? <AlertTriangle className="h-10 w-10 text-warn animate-pulse" /> :
-                <ShieldCheck className="h-10 w-10 text-eco animate-pulse" />}
+      {/* CTO COMPLIANCE WIDGET */}
+      <div className="glass-strong rounded-[2rem] p-8 border border-glass-border relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-8 mb-6">
+        <div className="flex items-center gap-4">
+          <div className={`h-12 w-12 shrink-0 rounded-xl bg-${ctoColor}/10 border border-${ctoColor}/20 flex items-center justify-center`}>
+            <ShieldCheck className={`h-6 w-6 text-${ctoColor}`} style={{ color: `var(--${ctoColor})` }} />
           </div>
-          <div className="flex-1">
-            <div className="text-sm font-black uppercase tracking-[0.3em] text-muted-foreground mb-1">Overall Plant Status</div>
-            <h1 className={`text-5xl md:text-6xl font-black font-display tracking-tighter uppercase ${overallStatus === 'DANGER' ? 'text-danger drop-shadow-[0_0_15px_rgba(255,0,0,0.5)]' :
-                overallStatus === 'WARNING' ? 'text-warn drop-shadow-[0_0_15px_rgba(255,170,0,0.5)]' :
-                  'text-eco drop-shadow-[0_0_15px_rgba(0,255,100,0.5)]'
-              }`}>
-              {overallStatus}
-            </h1>
-          </div>
-          <div className="hidden md:block text-right">
-            <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-2">Live Analysis</div>
-            <div className={`text-lg font-bold ${overallStatus === 'DANGER' ? 'text-danger/90' :
-                overallStatus === 'WARNING' ? 'text-warn/90' :
-                  'text-eco/90'
-              }`}>
-              {overallStatus === 'DANGER' ? (dangerReasons.length > 0 ? dangerReasons.join(" • ") : 'Immediate Action Required.') :
-                overallStatus === 'WARNING' ? 'Approaching Limits. Monitor Closely.' :
-                  'All Systems Operating Nominally.'}
-            </div>
+          <div>
+            <h4 className="text-[10px] md:text-xs font-black uppercase tracking-widest text-muted-foreground mb-1">CTO Compliance Status</h4>
+            <div className={`text-lg md:text-xl font-bold text-${ctoColor}`} style={{ color: `var(--${ctoColor})` }}>{ctoStatus}</div>
           </div>
         </div>
-      </motion.div>
-
+        
+        <div className="flex-1 w-full md:max-w-xl">
+           <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
+              <span>Valid Until: {ctoValidityDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+              <span className={`text-${ctoColor}`} style={{ color: `var(--${ctoColor})` }}>{ctoRemainingDays} Days Remaining</span>
+           </div>
+           <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
+              <motion.div 
+                 initial={{ width: 0 }} 
+                 animate={{ width: `${Math.min(100, (ctoRemainingDays / 365) * 100)}%` }} 
+                 transition={{ duration: 1.5, ease: "easeOut" }}
+                 className={`h-full bg-${ctoColor} rounded-full`}
+                 style={{ backgroundColor: `var(--${ctoColor})`, boxShadow: `0 0 10px var(--${ctoColor})` }}
+              />
+           </div>
+           {ctoRemainingDays < 30 && (
+             <div className="mt-4 text-[10px] text-danger font-black uppercase tracking-widest flex items-center gap-2 bg-danger/10 p-3 rounded-xl border border-danger/20">
+               <AlertTriangle className="h-4 w-4 shrink-0 animate-pulse" /> CTO renewal should be initiated to maintain continuous compliance.
+             </div>
+           )}
+        </div>
+      </div>
 
       {/* Animated Hero Section with Dual CTO Gauges */}
       <div className="grid lg:grid-cols-2 gap-6">
@@ -318,9 +555,9 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
               >
                 <RefreshCcw className="h-3 w-3 animate-spin-slow text-cyan" /> Simulate Next Day
               </button>
-              <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border-2 shadow-glow-sm flex items-center gap-2 ${ctoPct > 90 ? 'border-danger text-danger bg-danger/10' : 'border-cyan text-cyan bg-cyan/10'}`}>
+              <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border-2 shadow-glow-sm flex items-center gap-2 ${currentUsed > a.ctoLimit ? 'border-danger text-danger bg-danger/10' : 'border-cyan text-cyan bg-cyan/10'}`}>
                 <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
-                {ctoPct > 90 ? 'Critical' : 'Nominal'}
+                {currentUsed > a.ctoLimit ? 'CTO Limit Exceeded' : 'Nominal'}
               </div>
             </div>
           </div>
@@ -337,8 +574,8 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
               />
               <defs>
                 <linearGradient id="dailyCtoGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="var(--cyan)" />
-                  <stop offset="100%" stopColor={ctoPct > 90 ? "var(--danger)" : "var(--cyan-glow)"} />
+                  <stop offset="0%" stopColor={currentUsed > a.ctoLimit ? "var(--danger)" : "var(--cyan)"} />
+                  <stop offset="100%" stopColor={currentUsed > a.ctoLimit ? "var(--danger)" : "var(--cyan-glow)"} />
                 </linearGradient>
               </defs>
             </svg>
@@ -347,21 +584,29 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
                 initial={{ top: "100%" }}
                 animate={{ top: `${100 - ctoPct}%` }}
                 transition={{ duration: 2, ease: "easeOut" }}
-                className={`absolute inset-0 bg-gradient-to-t ${ctoPct > 90 ? 'from-danger/40 to-danger/10' : 'from-cyan/40 to-cyan/10'}`}
+                className={`absolute inset-0 bg-gradient-to-t ${currentUsed > a.ctoLimit ? 'from-danger/40 to-danger/10' : 'from-cyan/40 to-cyan/10'}`}
               >
-                <div className={`absolute -top-4 left-[-50%] w-[200%] h-8 opacity-40 animate-flow`} style={{ background: `radial-gradient(ellipse at center, var(--${ctoPct > 90 ? 'danger' : 'cyan'}), transparent 70%)`, borderRadius: '45%' }} />
+                <div className={`absolute -top-4 left-[-50%] w-[200%] h-8 opacity-40 animate-flow`} style={{ background: `radial-gradient(ellipse at center, var(--${currentUsed > a.ctoLimit ? 'danger' : 'cyan'}), transparent 70%)`, borderRadius: '45%' }} />
               </motion.div>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <div className="text-6xl font-black font-display tracking-tighter">{ctoPct}%</div>
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-1">Utilized Today</div>
+                <div className={`text-6xl font-black font-display tracking-tighter ${currentUsed > a.ctoLimit ? 'text-danger' : ''}`}>{ctoPct}%</div>
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-1">Utilization</div>
+                
+                <div className="mt-2 text-[9px] font-bold text-muted-foreground flex flex-col items-center">
+                  {flowError ? (
+                    <span className="text-amber-400">Waiting for Live Data...</span>
+                  ) : (
+                    <span>Updated: {flowLastUpdated}</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
           <div className="w-full grid grid-cols-3 gap-4">
-            <HeroMetric label="Configured" value={`${a.ctoLimit}`} sub="L/Day" color="muted" />
-            <HeroMetric label="Current" value={`${currentUsed.toFixed(3)}`} sub="L Used" color="cyan" />
-            <HeroMetric label="Remaining" value={`${remaining.toFixed(3)}`} sub="L Left" color={ctoPct > 90 ? "danger" : "eco"} />
+            <HeroMetric label="Configured" value={`${a.ctoLimit}`} sub="L" color="muted" />
+            <HeroMetric label="Current" value={`${currentUsed.toFixed(2)}`} sub="L" color="cyan" />
+            <HeroMetric label="Remaining" value={`${remaining.toFixed(2)}`} sub="L" color={currentUsed > a.ctoLimit ? "danger" : "eco"} />
           </div>
         </div>
 
@@ -381,9 +626,9 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
               >
                 <RefreshCcw className="h-3 w-3 animate-spin-slow text-primary" /> Simulate Next Month
               </button>
-              <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border-2 shadow-glow-sm flex items-center gap-2 ${monthlyCtoPct > 90 ? 'border-danger text-danger bg-danger/10' : 'border-primary text-primary bg-primary/10'}`}>
+              <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border-2 shadow-glow-sm flex items-center gap-2 ${monthlyCtoUsed > a.monthlyCtoLimit ? 'border-danger text-danger bg-danger/10' : 'border-primary text-primary bg-primary/10'}`}>
                 <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
-                {monthlyCtoPct > 90 ? 'Critical' : 'Tracking'}
+                {monthlyCtoUsed > a.monthlyCtoLimit ? 'Monthly Limit Exceeded' : 'Tracking'}
               </div>
             </div>
           </div>
@@ -400,8 +645,8 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
               />
               <defs>
                 <linearGradient id="monthlyCtoGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="var(--primary)" />
-                  <stop offset="100%" stopColor={monthlyCtoPct > 90 ? "var(--danger)" : "var(--primary-glow)"} />
+                  <stop offset="0%" stopColor={monthlyCtoUsed > a.monthlyCtoLimit ? "var(--danger)" : "var(--primary)"} />
+                  <stop offset="100%" stopColor={monthlyCtoUsed > a.monthlyCtoLimit ? "var(--danger)" : "var(--primary-glow)"} />
                 </linearGradient>
               </defs>
             </svg>
@@ -410,13 +655,13 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
                 initial={{ top: "100%" }}
                 animate={{ top: `${100 - monthlyCtoPct}%` }}
                 transition={{ duration: 2.5, ease: "easeOut", delay: 0.2 }}
-                className={`absolute inset-0 bg-gradient-to-t ${monthlyCtoPct > 90 ? 'from-danger/40 to-danger/10' : 'from-primary/40 to-primary/10'}`}
+                className={`absolute inset-0 bg-gradient-to-t ${monthlyCtoUsed > a.monthlyCtoLimit ? 'from-danger/40 to-danger/10' : 'from-primary/40 to-primary/10'}`}
               >
-                <div className="absolute -top-4 left-[-50%] w-[200%] h-8 opacity-40 animate-flow" style={{ background: `radial-gradient(ellipse at center, var(--${monthlyCtoPct > 90 ? 'danger' : 'primary'}), transparent 70%)`, borderRadius: '45%' }} />
+                <div className="absolute -top-4 left-[-50%] w-[200%] h-8 opacity-40 animate-flow" style={{ background: `radial-gradient(ellipse at center, var(--${monthlyCtoUsed > a.monthlyCtoLimit ? 'danger' : 'primary'}), transparent 70%)`, borderRadius: '45%' }} />
               </motion.div>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <div className="text-6xl font-black font-display tracking-tighter">{monthlyCtoPct}%</div>
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-1">Utilized This Month</div>
+                <div className={`text-6xl font-black font-display tracking-tighter ${monthlyCtoUsed > a.monthlyCtoLimit ? 'text-danger' : ''}`}>{monthlyCtoPct}%</div>
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-1">Utilization</div>
               </div>
             </div>
           </div>
@@ -424,22 +669,20 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
             <HeroMetric
               label="Configured"
               value={a.monthlyCtoLimit.toFixed(0)}
-              sub="L/Month"
+              sub="L"
               color="muted"
             />
-
             <HeroMetric
               label="Current"
-              value={monthlyCtoUsed.toFixed(3)}
-              sub="L Used"
+              value={`${monthlyCtoUsed.toFixed(2)}`}
+              sub="L"
               color="primary"
             />
-
             <HeroMetric
               label="Remaining"
-              value={remainingMonthly.toFixed(3)}
-              sub="L Left"
-              color={monthlyCtoPct > 90 ? "danger" : "eco"}
+              value={`${remainingMonthly.toFixed(2)}`}
+              sub="L"
+              color={monthlyCtoUsed > a.monthlyCtoLimit ? "danger" : "eco"}
             />
           </div>
         </div>
@@ -452,7 +695,12 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
         <h4 className="text-sm font-black uppercase tracking-widest mb-6">Shift Operations</h4>
         <div className="grid lg:grid-cols-3 gap-6">
           {shifts.map((shift, i) => (
-            <div key={i} className={`p-6 rounded-2xl border transition-all ${shift.active ? 'border-cyan shadow-glow bg-cyan/10' : 'border-glass-border bg-white/5'}`}>
+            <div key={i} className={`p-6 rounded-2xl border transition-all ${shift.active ? 'border-cyan shadow-glow bg-cyan/10' : 'border-glass-border bg-white/5'} relative`}>
+              {shift.exceeded && (
+                <div className="absolute -top-3 -right-3 bg-danger text-white text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-[0_0_15px_var(--danger)] z-10 animate-bounce">
+                   Exceeded Today
+                </div>
+              )}
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h5 className={`text-sm font-bold tracking-tight ${shift.active ? 'text-cyan' : 'text-muted-foreground'}`}>{shift.name}</h5>
@@ -487,22 +735,22 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
           <div className="p-5 rounded-2xl glass border border-glass-border relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:opacity-100 transition-opacity"><Droplets className="h-5 w-5 text-cyan" /></div>
             <div className="text-[10px] uppercase tracking-widest font-black text-muted-foreground mb-2">Fresh Water Used</div>
-            <div className="text-3xl font-display font-black text-cyan">{(liveCtoUsed).toFixed(1)} <span className="text-sm text-cyan/50">L</span></div>
+            <div className="text-3xl font-display font-black text-cyan">{freshWaterUsed.toFixed(1)} <span className="text-sm text-cyan/50">L</span></div>
           </div>
           <div className="p-5 rounded-2xl glass border border-glass-border relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:opacity-100 transition-opacity"><Recycle className="h-5 w-5 text-eco" /></div>
             <div className="text-[10px] uppercase tracking-widest font-black text-muted-foreground mb-2">Reuse Water</div>
-            <div className="text-3xl font-display font-black text-eco">{(liveCtoUsed * (reuseActual / 100)).toFixed(1)} <span className="text-sm text-eco/50">L</span></div>
+            <div className="text-3xl font-display font-black text-eco">{reuseWaterUsed.toFixed(1)} <span className="text-sm text-eco/50">L</span></div>
           </div>
           <div className="p-5 rounded-2xl glass border border-glass-border relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:opacity-100 transition-opacity"><Save className="h-5 w-5 text-primary" /></div>
             <div className="text-[10px] uppercase tracking-widest font-black text-muted-foreground mb-2">Water Saved</div>
-            <div className="text-3xl font-display font-black text-primary">{(liveCtoUsed * (reuseActual / 100)).toFixed(1)} <span className="text-sm text-primary/50">L</span></div>
+            <div className="text-3xl font-display font-black text-primary">{reuseWaterUsed.toFixed(1)} <span className="text-sm text-primary/50">L</span></div>
           </div>
           <div className="p-5 rounded-2xl glass border border-glass-border relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:opacity-100 transition-opacity"><TrendingUp className="h-5 w-5 text-amber-500" /></div>
             <div className="text-[10px] uppercase tracking-widest font-black text-muted-foreground mb-2">Reuse Efficiency</div>
-            <div className="text-3xl font-display font-black text-amber-500">{reuseActual} <span className="text-sm text-amber-500/50">%</span></div>
+            <div className="text-3xl font-display font-black text-amber-500">{reuseEfficiency.toFixed(1)} <span className="text-sm text-amber-500/50">%</span></div>
           </div>
         </div>
       </div>
@@ -527,7 +775,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
             <div>
               <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Reuse Target Status</div>
               <div className={`text-sm font-bold ${reuseActual >= a.reuseTarget ? 'text-eco' : 'text-warn'}`}>
-                {reuseActual >= a.reuseTarget ? '🟢 Target Achieved' : '🟡 Target Below Expected'}
+                {reuseActual >= a.reuseTarget ? '🟢 Target Not Achieved' : '🟡 Target Below Expected'}
               </div>
             </div>
           </div>

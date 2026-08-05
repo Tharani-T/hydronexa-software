@@ -23,9 +23,10 @@ export function useAdaptive() {
   const { state } = useAppState();
   const s = state.setup;
   const reuseTarget = s.reuseTarget ?? 60;
-  const ctoLimit = s.ctoLimit ?? 10000; // Default 10k KL
-  const monthlyCtoLimit = s.monthlyCtoLimit ?? (ctoLimit * 30);
+  const ctoLimit = s.ctoLimit ?? 0;
+  const monthlyCtoLimit = s.monthlyCtoLimit ?? 0;
   const type = s.industryType ?? "Industrial";
+  const shiftTimings = s.shiftTimings ?? "Morning";
   
   const email = state.currentUserEmail;
   const plantName = s.plantName ?? "Industrial Facility";
@@ -40,8 +41,9 @@ export function useAdaptive() {
     Industrial: { tempMax: 35, phRange: "6.5 - 8.5", phMin: 6.5, phMax: 8.5, mode: "General Mode" }
   };
   const standards = standardOptions[type as keyof typeof standardOptions] || standardOptions.Industrial;
+  const ctoValidity = s.ctoValidity;
 
-  return { reuseTarget, ctoLimit, monthlyCtoLimit, type, email, plantName, token, ...standards };
+  return { reuseTarget, ctoLimit, monthlyCtoLimit, type, email, plantName, token, shiftTimings, ctoValidity, ...standards };
 }
 
 export function triggerBuzzer() {

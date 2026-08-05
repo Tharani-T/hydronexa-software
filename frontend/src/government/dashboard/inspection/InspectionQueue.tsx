@@ -4,6 +4,7 @@ import {
   Search, Filter, AlertOctagon, Calendar, Clock, 
   ChevronRight, X, Mail, MapPin, Factory, AlertTriangle, FileText, CheckCircle
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 // Initial Mock Data (used if localStorage is empty)
 const mockIndustries = [
@@ -88,41 +89,82 @@ export function InspectionQueue() {
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
-  useEffect(() => {
-    const stored = localStorage.getItem('hydronexa_inspection_queue');
-    if (stored) {
-      try {
-        setIndustries(JSON.parse(stored));
-      } catch (e) {
-        setIndustries(mockIndustries);
-        localStorage.setItem('hydronexa_inspection_queue', JSON.stringify(mockIndustries));
+  const fetchInspectionQueue = async () => {
+    try {
+      const { data, error } = await supabase.from('industry').select('*').eq('current_workflow_stage', 'Inspection');
+      if (error) {
+        console.error("Error fetching inspection queue:", error);
+        return;
       }
-    } else {
-      setIndustries(mockIndustries);
-      localStorage.setItem('hydronexa_inspection_queue', JSON.stringify(mockIndustries));
+      
+      const formattedData = (data || []).map(dbRow => {
+        let priority = "Low";
+        const notices = Number(dbRow.warning_count) || 0;
+        if (notices > 0 && notices < 3) priority = "Medium";
+        if (notices >= 4) priority = "High";
+        
+        let reason = "Compliance Audit";
+        if (Number(dbRow.current_cto_consumption) >= Number(dbRow.daily_cto_limit)) reason = 'CTO Limit Exceeded';
+        else if (Number(dbRow.current_reuse_percentage) <= (Number(dbRow.daily_reuse_target) - 15)) reason = 'Reuse Target Not Achieved';
+        
+        return {
+          id: dbRow.user_id || `IND-${Math.floor(1000 + Math.random() * 9000)}`,
+          name: dbRow.industry_name || 'Unknown Industry',
+          district: dbRow.district || 'Unknown',
+          region: "South", // Default or derived
+          address: `${dbRow.district || 'Industrial'} Sector, Tamil Nadu`,
+          email: dbRow.email || 'N/A',
+          complianceIssue: reason,
+          warningsSent: notices,
+          priority: priority,
+          lastNoticeDate: dbRow.last_warning_date ? new Date(dbRow.last_warning_date).toLocaleDateString() : new Date().toLocaleDateString(),
+          status: "Pending", // Assuming all new in queue are Pending
+          ctoConsumption: `${Number(dbRow.current_cto_consumption) || 0} L`,
+          ctoLimit: `${Number(dbRow.daily_cto_limit) || 0} L`,
+          reusePercent: `${Number(dbRow.current_reuse_percentage) || 0}%`,
+          reuseTarget: `${Number(dbRow.daily_reuse_target) || 0}%`,
+          warningHistory: [
+            { date: dbRow.last_warning_date ? new Date(dbRow.last_warning_date).toLocaleDateString() : new Date().toLocaleDateString(), reason: reason }
+          ]
+        };
+      });
+      setIndustries(formattedData);
+    } catch (e) {
+      console.error(e);
     }
-
-    // Optional: listen for storage changes if mail center is used in another tab
-    const handleStorage = () => {
-      const updated = localStorage.getItem('hydronexa_inspection_queue');
-      if (updated) {
-        try { setIndustries(JSON.parse(updated)); } catch(e){}
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
-
-  const handleMarkCompleted = () => {
-    if (!selectedIndustry) return;
-    const updated = industries.filter(ind => ind.id !== selectedIndustry.id);
-    setIndustries(updated);
-    localStorage.setItem('hydronexa_inspection_queue', JSON.stringify(updated));
-    closePanel();
   };
 
-  const handleSchedule = () => {
+  useEffect(() => {
+    fetchInspectionQueue();
+    
+    const subscription = supabase
+      .channel('inspection_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'industry', filter: "current_workflow_stage=eq.Inspection" }, (payload) => {
+        fetchInspectionQueue();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, []);
+
+  const handleMarkCompleted = async () => {
+    if (!selectedIndustry) return;
+    try {
+      await supabase.from('industry').update({ current_workflow_stage: 'Normal' }).eq('user_id', selectedIndustry.id);
+      const updated = industries.filter(ind => ind.id !== selectedIndustry.id);
+      setIndustries(updated);
+      closePanel();
+    } catch (e) {
+      console.error("Error marking complete:", e);
+    }
+  };
+
+  const handleSchedule = async () => {
     if (!selectedIndustry || !scheduleDate) return;
+    // For now we just update local state since there is no 'scheduled_date' column,
+    // but a fully persistent app would add a column to Supabase.
     const updated = industries.map(ind => {
       if (ind.id === selectedIndustry.id) {
         return { ...ind, status: 'Scheduled', scheduledDate: scheduleDate };
@@ -130,7 +172,6 @@ export function InspectionQueue() {
       return ind;
     });
     setIndustries(updated);
-    localStorage.setItem('hydronexa_inspection_queue', JSON.stringify(updated));
     setScheduling(false);
     setScheduleDate("");
     setSelectedIndustry({ ...selectedIndustry, status: 'Scheduled', scheduledDate: scheduleDate });
@@ -251,6 +292,7 @@ export function InspectionQueue() {
             <option value="">Priority</option>
             <option value="High">High</option>
             <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
           </select>
           <select 
             value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
@@ -304,7 +346,9 @@ export function InspectionQueue() {
                     </td>
                     <td className="py-4 px-6">
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                        ind.priority === 'High' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                        ind.priority === 'High' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                        ind.priority === 'Medium' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                        'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
                       }`}>
                         {ind.priority}
                       </span>
@@ -351,7 +395,9 @@ export function InspectionQueue() {
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className={`px-2.5 py-1 rounded-md text-[10px] uppercase tracking-wider font-black ${
-                      selectedIndustry.priority === 'High' ? 'bg-red-600 text-white' : 'bg-orange-500 text-white'
+                      selectedIndustry.priority === 'High' ? 'bg-red-600 text-white' : 
+                      selectedIndustry.priority === 'Medium' ? 'bg-orange-500 text-white' : 
+                      'bg-emerald-500 text-white'
                     }`}>
                       {selectedIndustry.priority} Priority
                     </span>

@@ -17,6 +17,8 @@ import { Compliance, MailCenter } from "@/government/dashboard/compliance/Compli
 import { Reports } from "@/government/dashboard/reports/Reports";
 import { InspectionQueue } from "@/government/dashboard/inspection/InspectionQueue";
 
+import { GovLanguageSelector } from "@/government/dashboard/components/GovLanguageSelector";
+
 export function GovDashboard() {
   const { state } = useAppState();
   const navigate = useNavigate();
@@ -41,8 +43,9 @@ export function GovDashboard() {
       onNavigate={setSection}
       accent="cyan"
       title="Regulatory Command Center"
-      subtitle="Real-time AI-powered compliance intelligence"
+      subtitle="Real-time Intelligent compliance intelligence"
       logoutTo="/government/login"
+      headerRight={<GovLanguageSelector />}
     >
       {section === "overview" && <Overview />}
       {section === "industries" && <IndustriesView />}

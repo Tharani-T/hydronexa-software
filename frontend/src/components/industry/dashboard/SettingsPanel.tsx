@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppState, Industries, IndustryType } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
 import { 
   Building2, Gauge, Clock, BellRing, Save, 
   ChevronRight, Check, EyeOff, Eye, Send, CheckCircle2
@@ -10,13 +11,44 @@ const steps = [
   { title: "Plant Identity", icon: Building2 },
   { title: "Capacity & CTO", icon: Gauge },
   { title: "Operations", icon: Clock },
-  { title: "Alerts & AI", icon: BellRing },
+  { title: "Alerts & Intelligence", icon: BellRing },
 ];
 
 export function SettingsPanel() {
   const { state, updateSetup } = useAppState();
   const s = state.setup || {};
   const [step, setStep] = useState(0);
+
+  const [dailyTarget, setDailyTarget] = useState(s.dailyReuseTarget ?? 0);
+  const [monthlyTarget, setMonthlyTarget] = useState(s.monthlyReuseTarget ?? 0);
+
+  useEffect(() => {
+    if (s.dailyReuseTarget != null) setDailyTarget(s.dailyReuseTarget);
+    if (s.monthlyReuseTarget != null) setMonthlyTarget(s.monthlyReuseTarget);
+  }, [s.dailyReuseTarget, s.monthlyReuseTarget]);
+
+  useEffect(() => {
+    async function fetchTargets() {
+      if (s.email) {
+        try {
+          const { data, error } = await supabase
+            .from('industry')
+            .select('daily_reuse_target, monthly_reuse_target')
+            .eq('email', s.email)
+            .limit(1);
+          
+          if (data && data.length > 0 && !error) {
+            const record = data[0];
+            if (record.daily_reuse_target != null) setDailyTarget(record.daily_reuse_target);
+            if (record.monthly_reuse_target != null) setMonthlyTarget(record.monthly_reuse_target);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+    fetchTargets();
+  }, [s.email]);
 
   // Request Change Dialog State
   const [isRequestingChange, setIsRequestingChange] = useState(false);
@@ -122,8 +154,8 @@ export function SettingsPanel() {
                   <Number label="CTO Permitted Water Limit (L/day)" value={s.ctoLimit ?? 0} onChange={() => {}} />
                   <Number label="Monthly CTO Limit (L)" value={s.monthlyCtoLimit ?? 0} onChange={() => {}} />
                   <Field label="CTO Validity Date" value={s.ctoValidity} onChange={() => {}} placeholder="YYYY-MM-DD" />
-                  <Number label="Daily Reuse Target (L)" value={s.dailyReuseTarget ?? 0} onChange={() => {}} />
-                  <Number label="Monthly Reuse Target (L)" value={s.monthlyReuseTarget ?? 0} onChange={() => {}} />
+                  <Number label="Daily Reuse Target (L)" value={dailyTarget || s.dailyReuseTarget || 0} onChange={() => {}} />
+                  <Number label="Monthly Reuse Target (L)" value={monthlyTarget || s.monthlyReuseTarget || 0} onChange={() => {}} />
                   <div className="flex flex-col h-full">
                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-bold mb-2">Reuse Target (%)</label>
                     <div className="mt-auto w-full rounded-xl glass border border-glass-border px-4 h-[46px] flex items-center gap-4 transition">
@@ -152,7 +184,7 @@ export function SettingsPanel() {
 
           {step === 3 && (
             <div className="space-y-6">
-              <h3 className="text-xl font-bold uppercase tracking-widest text-cyan mb-6">Alerts & AI</h3>
+              <h3 className="text-xl font-bold uppercase tracking-widest text-cyan mb-6">Alerts & Intelligence</h3>
               <Slider label="Alert Sensitivity" value={s.alertSensitivity ?? 70} onChange={(v: any) => updateSetup({ alertSensitivity: v })} />
               <div className="mt-6">
                 <label className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Notification Preferences</label>
@@ -169,7 +201,7 @@ export function SettingsPanel() {
                 </div>
               </div>
               <div className="mt-8 space-y-4">
-                <Toggle label="AI Monitoring" value={!!s.aiMonitoring} onChange={(v: any) => updateSetup({ aiMonitoring: v })} />
+                <Toggle label="Intelligent Monitoring" value={!!s.aiMonitoring} onChange={(v: any) => updateSetup({ aiMonitoring: v })} />
                 <Toggle label="Compliance Alerts" value={!!s.complianceAlerts} onChange={(v: any) => updateSetup({ complianceAlerts: v })} />
                 <Toggle label="Sustainability Reports" value={!!s.sustainabilityReports} onChange={(v: any) => updateSetup({ sustainabilityReports: v })} />
               </div>

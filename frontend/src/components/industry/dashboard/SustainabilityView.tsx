@@ -29,24 +29,24 @@ export function SustainabilityView({ data }: { data: SensorData | null }) {
 
   // Mock Data derived from prompt requirements
   const shifts = [
-    { name: "Morning Shift", icon: Sunrise, fresh: 3000, reuse: 7000, total: 10000, efficiency: 70, highlight: false },
-    { name: "Afternoon Shift", icon: Sun, fresh: 4000, reuse: 8300, total: 12300, efficiency: 67, highlight: true },
-    { name: "Night Shift", icon: Moon, fresh: 4000, reuse: 2000, total: 6000, efficiency: 33, highlight: false },
+    { name: "Morning Shift", icon: Sunrise, fresh: 30, reuse: 70, total: 100, efficiency: 70, highlight: false },
+    { name: "Afternoon Shift", icon: Sun, fresh: 40, reuse: 83, total: 123, efficiency: 67, highlight: true },
+    { name: "Night Shift", icon: Moon, fresh: 40, reuse: 20, total: 60, efficiency: 33, highlight: false },
   ];
 
-  const totalFresh = 11000;
-  const totalReuse = 17300;
+  const totalFresh = 110;
+  const totalReuse = 173;
   const totalWater = totalFresh + totalReuse;
   const freshPercent = Math.round((totalFresh / totalWater) * 100);
   const reusePercent = Math.round((totalReuse / totalWater) * 100);
 
-  const ctoFreshLimit = 15000;
+  const ctoFreshLimit = 150;
   const freshCompliance = Math.round((totalFresh / ctoFreshLimit) * 100); // 73% (lower is better)
   
-  const ctoReuseTarget = 15000;
+  const ctoReuseTarget = 150;
   const reuseCompliance = Math.round((totalReuse / ctoReuseTarget) * 100); // 115% (higher is better)
 
-  // AI Sustainability Score
+  // Sustainability Performance Score
   const score = 94;
   const grade = "A+";
   const status = "🟢 Safe Zone";
@@ -59,7 +59,7 @@ export function SustainabilityView({ data }: { data: SensorData | null }) {
          <div className="glass-strong rounded-[2.5rem] p-8 border border-eco/30 relative overflow-hidden bg-eco/5 flex flex-col justify-center items-center text-center shadow-[0_0_40px_rgba(0,255,0,0.1)]">
             <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-eco/20 to-transparent opacity-50 pointer-events-none" />
             <Leaf className="h-10 w-10 text-eco mb-4 drop-shadow-[0_0_15px_rgba(0,255,0,0.5)]" />
-            <div className="text-[10px] uppercase tracking-[0.2em] font-black text-eco mb-2">AI Sustainability Score</div>
+            <div className="text-[10px] uppercase tracking-[0.2em] font-black text-eco mb-2">Sustainability Performance Score</div>
             <div className="flex items-end gap-2 mb-2">
                <CountUp value={score} className="text-7xl font-black font-display text-white tracking-tighter drop-shadow-md" />
                <span className="text-2xl font-black text-muted-foreground mb-2">/100</span>
@@ -77,7 +77,7 @@ export function SustainabilityView({ data }: { data: SensorData | null }) {
                   <CheckCircle2 className="h-5 w-5 text-eco" />
                </div>
                <div>
-                  <h4 className="text-sm font-black uppercase tracking-widest text-white">AI Compliance Summary</h4>
+                  <h4 className="text-sm font-black uppercase tracking-widest text-white">Compliance Summary</h4>
                   <p className="text-[10px] uppercase tracking-widest text-eco font-bold">Operational Status: Optimal</p>
                </div>
             </div>
@@ -268,11 +268,11 @@ export function SustainabilityView({ data }: { data: SensorData | null }) {
 
       {/* 2. AI SHIFT INSIGHTS & 7. AI RECOMMENDATIONS */}
       <div className="grid lg:grid-cols-2 gap-6">
-         {/* AI Shift Insights */}
-         <div className="glass-strong rounded-3xl p-8 border border-glass-border flex flex-col">
+         {/* Operational Shift Insights */}
+         {/* <div className="glass-strong rounded-3xl p-8 border border-glass-border flex flex-col">
             <div className="flex items-center gap-3 mb-6">
                <Brain className="h-5 w-5 text-indigo-400" />
-               <h4 className="text-sm font-black uppercase tracking-[0.15em]">AI Shift Insights</h4>
+               <h4 className="text-sm font-black uppercase tracking-[0.15em]">Operational Shift Insights</h4>
             </div>
             <div className="space-y-4 flex-1">
                <div className="p-5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex gap-4 items-start">
@@ -298,14 +298,14 @@ export function SustainabilityView({ data }: { data: SensorData | null }) {
                   </div>
                </div>
             </div>
-         </div>
+         </div> */}
 
-         {/* AI Recommendations */}
-         <div className="glass-strong rounded-3xl p-8 border border-glass-border">
+         {/* Smart Recommendations */}
+         {/* <div className="glass-strong rounded-3xl p-8 border border-glass-border">
             <div className="flex items-center justify-between mb-6">
                <div className="flex items-center gap-3">
                   <Lightbulb className="h-5 w-5 text-yellow-400" />
-                  <h4 className="text-sm font-black uppercase tracking-[0.15em]">AI Recommendations</h4>
+                  <h4 className="text-sm font-black uppercase tracking-[0.15em]">Smart Recommendations</h4>
                </div>
                <span className="px-2 py-1 rounded bg-white/10 text-[9px] font-black uppercase tracking-widest">Actionable</span>
             </div>
@@ -316,8 +316,66 @@ export function SustainabilityView({ data }: { data: SensorData | null }) {
                <RecommendationItem text="Improve reuse water availability during production peaks." />
                <RecommendationItem text="Continue sustainable water management practices." />
             </div>
+         </div> */}
+      </div>
+
+      {/* 8. MONTHLY SUSTAINABILITY CALENDAR */}
+      <div className="glass-strong rounded-3xl p-8 border border-glass-border">
+         <div className="flex items-center gap-3 mb-6">
+            <Calendar className="h-5 w-5 text-indigo-400" />
+            <h4 className="text-sm font-black uppercase tracking-[0.15em]">Monthly Sustainability Calendar</h4>
+         </div>
+         
+         <div className="max-w-sm mx-auto">
+            <div className="grid grid-cols-7 gap-2 mb-3 text-center text-[9px] md:text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">
+               <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+            </div>
+            
+            <div className="grid grid-cols-7 gap-2 mb-6">
+               {/* 2 spacer slots to simulate month starting on a Tuesday */}
+               <div className="hidden sm:block opacity-0 pointer-events-none" />
+               <div className="hidden sm:block opacity-0 pointer-events-none" />
+               
+               {Array.from({ length: 30 }).map((_, i) => {
+                  const rand = Math.random();
+                  let status = 'green';
+                  if (rand > 0.9) status = 'red';
+                  else if (rand > 0.7) status = 'yellow';
+
+                  let bgClass = "bg-eco/10 border-eco/30 hover:bg-eco/30 hover:border-eco/50 shadow-[0_0_15px_rgba(34,197,94,0.05)]";
+                  if (status === 'yellow') bgClass = "bg-amber-400/10 border-amber-400/30 hover:bg-amber-400/30 hover:border-amber-400/50 shadow-[0_0_15px_rgba(251,191,36,0.05)]";
+                  if (status === 'red') bgClass = "bg-danger/10 border-danger/30 hover:bg-danger/30 hover:border-danger/50 shadow-[0_0_15px_rgba(239,68,68,0.05)]";
+
+                  return (
+                     <div 
+                        key={i} 
+                        className={`aspect-square w-full rounded-md md:rounded-lg border flex flex-col items-center justify-center ${bgClass} transition-all duration-300 cursor-pointer`}
+                        title={`Day ${i + 1}: ${status === 'green' ? 'Sustainable Day' : status === 'yellow' ? 'Average Day' : 'Poor Day'}`}
+                     >
+                        <span className="text-xs md:text-sm font-black text-white/70">{i + 1}</span>
+                     </div>
+                  )
+               })}
+            </div>
+         </div>
+
+         <div className="flex flex-wrap items-center gap-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-t border-white/5 pt-6 mt-2">
+            <div className="flex items-center gap-2">
+               <div className="w-3 h-3 rounded bg-eco/20 border border-eco/30" />
+               Sustainable Day
+            </div>
+            <div className="flex items-center gap-2">
+               <div className="w-3 h-3 rounded bg-amber-400/20 border border-amber-400/30" />
+               Average Day
+            </div>
+            <div className="flex items-center gap-2">
+               <div className="w-3 h-3 rounded bg-danger/20 border border-danger/30" />
+               Poor Day
+            </div>
          </div>
       </div>
+
+
 
     </div>
   );

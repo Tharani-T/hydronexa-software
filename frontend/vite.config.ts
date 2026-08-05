@@ -6,7 +6,7 @@
 // You can pass additional config via defineConfig({ vite: { ... } }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-export default defineConfig({
+const lovableConfig = defineConfig({
   server: {
     proxy: {
       '/api': {
@@ -16,4 +16,14 @@ export default defineConfig({
     }
   }
 });
+
+export default async (env: any) => {
+  const config = await lovableConfig(env);
+  if (config.plugins) {
+    config.plugins = config.plugins.filter(
+      (p: any) => !p || p.name !== 'lovable-plugin'
+    );
+  }
+  return config;
+};
 

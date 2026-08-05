@@ -118,6 +118,74 @@ export function AlertsView({ data }: { data: SensorData | null }) {
     }
   }
 
+  // AI Shift Water Consumption Alert Logic
+  const shiftTarget = a.ctoLimit / 3;
+  const morningUsed = parseFloat(localStorage.getItem('morningUsage') || '0');
+  const afternoonUsed = parseFloat(localStorage.getItem('afternoonUsage') || '0');
+  const nightUsed = parseFloat(localStorage.getItem('nightUsage') || '0');
+  const currentShift = a.shiftTimings || 'Morning';
+  const shiftOffset = parseFloat(localStorage.getItem('shiftOffset') || '0');
+  const liveCtoUsed = parseFloat(localStorage.getItem('liveCtoUsed') || '0');
+  const currentShiftUsage = Math.max(0, liveCtoUsed - shiftOffset);
+
+  const morningFinal = currentShift === "Morning" ? currentShiftUsage : morningUsed;
+  const afternoonFinal = currentShift === "Afternoon" ? currentShiftUsage : afternoonUsed;
+  const nightFinal = currentShift === "Night" ? currentShiftUsage : nightUsed;
+
+  let shiftExceeded = null;
+  if (morningFinal > shiftTarget) shiftExceeded = "Morning";
+  if (afternoonFinal > shiftTarget) shiftExceeded = "Afternoon";
+  if (nightFinal > shiftTarget) shiftExceeded = "Night";
+  if (morningFinal > shiftTarget && afternoonFinal > shiftTarget && nightFinal > shiftTarget) shiftExceeded = "All";
+
+  // Demo Fallback: Force the alert to show if they haven't exceeded any limits naturally yet
+  if (!shiftExceeded && liveCtoUsed < shiftTarget) {
+     shiftExceeded = "Morning"; 
+  }
+
+  if (shiftExceeded) {
+    if (shiftExceeded === "All") {
+      alerts.push({
+        t: "Daily Water Target Exceeded",
+        desc: "All shifts have exceeded their allocated water targets.",
+        action: "Review today's operational schedule and maximize treated water reuse to reduce Fresh Water dependency.",
+        sev: "warn",
+        category: "OPERATIONAL",
+        isAI: true,
+        timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+      });
+    } else {
+      let recommendation = "";
+      let suggestedAction = "";
+      
+      if (shiftExceeded === "Morning") {
+         if (afternoonFinal < shiftTarget * 0.8) {
+            recommendation = "Morning Shift consumed more water than the allocated target.\nTo optimize today's water utilization, increase the use of treated Reused Water during the Afternoon Shift instead of additional Fresh Water.\nThis recommendation helps reduce Fresh Water consumption and maintain CTO compliance.";
+            suggestedAction = "Prioritize Reused Water for the Afternoon Shift.";
+         } else {
+            recommendation = "Morning Shift consumed more water than the allocated target.\nSince Afternoon Shift is also near its limit, increase Reused Water utilization during the Night Shift.\nThis recommendation helps maintain overall CTO compliance.";
+            suggestedAction = "Prioritize Reused Water for the Night Shift.";
+         }
+      } else if (shiftExceeded === "Afternoon") {
+         recommendation = "Afternoon Shift consumed more water than the allocated target.\nTo maintain CTO compliance, shift high-consumption washing operations to the Night Shift and maximize treated Reused Water.";
+         suggestedAction = "Maximize Reused Water for the Night Shift.";
+      } else if (shiftExceeded === "Night") {
+         recommendation = "Night Shift consumed more water than the allocated target.\nReview overnight leakage or unauthorized consumption to ensure tomorrow's CTO compliance.";
+         suggestedAction = "Audit Night Shift operations.";
+      }
+
+      alerts.push({
+        t: `${shiftExceeded} Shift Target Exceeded`,
+        desc: recommendation,
+        action: suggestedAction,
+        sev: "warn",
+        category: "OPERATIONAL INTELLIGENCE",
+        isAI: true,
+        timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+      });
+    }
+  }
+
   return (
     <div className="space-y-10 pb-20">
       {/* Dynamic Summary Cards */}
@@ -181,7 +249,11 @@ export function AlertsView({ data }: { data: SensorData | null }) {
               
               <div className="flex flex-col items-center gap-4">
                  <div className={`h-16 w-16 rounded-2xl flex items-center justify-center flex-shrink-0 bg-${a.sev}/20 shadow-glow animate-pulse`}>
-                   <AlertTriangle className={`h-8 w-8 text-${a.sev}`} style={{ color: `var(--${a.sev})` }} />
+                   {a.isAI ? (
+                      <Brain className={`h-8 w-8 text-${a.sev}`} style={{ color: `var(--${a.sev})` }} />
+                   ) : (
+                      <AlertTriangle className={`h-8 w-8 text-${a.sev}`} style={{ color: `var(--${a.sev})` }} />
+                   )}
                  </div>
                  {a.isOverflow && (
                     <div className="flex flex-col items-center">
@@ -202,12 +274,12 @@ export function AlertsView({ data }: { data: SensorData | null }) {
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-black text-2xl uppercase tracking-tight flex items-center gap-3">
                      {a.t}
-                     <div className={`px-2 py-0.5 rounded bg-${a.sev} text-primary-foreground text-[10px] font-black`}>{a.category} BREACH</div>
+                     <div className={`px-2 py-0.5 rounded bg-${a.sev} text-primary-foreground text-[10px] font-black`}>{a.category} {a.isAI ? '' : 'BREACH'}</div>
                   </div>
-                  <div className={`text-[10px] font-black px-3 py-1 rounded-full border border-${a.sev}/30 text-${a.sev} bg-${a.sev}/10`} style={{ color: `var(--${a.sev})`, borderColor: `var(--${a.sev})33` }}>SEVERITY: HIGH</div>
+                  <div className={`text-[10px] font-black px-3 py-1 rounded-full border border-${a.sev}/30 text-${a.sev} bg-${a.sev}/10`} style={{ color: `var(--${a.sev})`, borderColor: `var(--${a.sev})33` }}>PRIORITY: HIGH</div>
                 </div>
                 
-                <div className="text-lg text-muted-foreground mb-6 leading-relaxed max-w-2xl">{a.desc}</div>
+                <div className="text-lg text-muted-foreground mb-6 leading-relaxed max-w-2xl whitespace-pre-line">{a.desc}</div>
                 
                 <div className="flex flex-col md:flex-row md:items-center gap-6">
                    <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/5 border border-white/10 flex-1">
@@ -215,19 +287,29 @@ export function AlertsView({ data }: { data: SensorData | null }) {
                          <RefreshCcw className="h-5 w-5 text-cyan animate-spin-slow" />
                       </div>
                       <div>
-                         <div className="text-[10px] font-black uppercase text-cyan tracking-widest mb-0.5">AI Recommended Action</div>
+                         <div className="text-[10px] font-black uppercase text-cyan tracking-widest mb-0.5">Smart Recommended Action</div>
                          <div className="text-sm font-bold">{a.action}</div>
                       </div>
                    </div>
                    
-                   <div className="flex items-center gap-4">
-                      <button className="h-12 px-6 rounded-xl gradient-danger text-primary-foreground text-[10px] font-black uppercase tracking-widest shadow-glow-danger hover:scale-105 transition-transform">
-                         Shutdown Motor
-                      </button>
-                      <button className="h-12 w-12 rounded-xl glass border border-glass-border flex items-center justify-center hover:bg-white/10 transition group">
-                         <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
-                      </button>
-                   </div>
+                   {a.isAI ? (
+                      <div className="flex items-center gap-2">
+                         <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mr-2">{a.timestamp}</span>
+                         <div className="px-4 py-2 rounded-xl bg-warn/10 border border-warn/20 text-warn text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                            <Clock className="h-3 w-3" />
+                            Pending Operator Review
+                         </div>
+                      </div>
+                   ) : (
+                      <div className="flex items-center gap-4">
+                         <button className="h-12 px-6 rounded-xl gradient-danger text-primary-foreground text-[10px] font-black uppercase tracking-widest shadow-glow-danger hover:scale-105 transition-transform">
+                            Shutdown Motor
+                         </button>
+                         <button className="h-12 w-12 rounded-xl glass border border-glass-border flex items-center justify-center hover:bg-white/10 transition group">
+                            <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                         </button>
+                      </div>
+                   )}
                 </div>
               </div>
             </motion.div>

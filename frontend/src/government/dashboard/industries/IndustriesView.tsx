@@ -60,6 +60,7 @@ HydroNexa Government Monitoring Team`;
 
     localStorage.setItem('pendingNotice', JSON.stringify({
        industry: industry.name,
+       id: industry.id,
        email: industry.email_id || '',
        subject,
        msg: body
@@ -70,13 +71,17 @@ HydroNexa Government Monitoring Team`;
 
   const fetchIndustries = async () => {
     try {
-      const { data, error } = await supabase.from('industry').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('industry').select('*');
       if (error) {
         console.error("Error fetching industries:", error);
         return;
       }
+
+      // Sort by warning_count descending to get Critical -> Warning -> Safe
+      const activeData = (data || []).filter((d: any) => d.current_workflow_stage !== 'Inspection');
+      const sortedData = activeData.sort((a, b) => (b.warning_count || 0) - (a.warning_count || 0));
       
-      const formattedData = (data || []).map(dbRow => {
+      const formattedData = sortedData.map(dbRow => {
         let ctoValidity = 'Valid';
         if (dbRow.cto_valid_until) {
           const ctoEnd = new Date(dbRow.cto_valid_until);
@@ -97,41 +102,42 @@ HydroNexa Government Monitoring Team`;
 
         let warningReason = '-';
         if (dbRow.compliance_status === 'Critical') {
-          if (Number(dbRow.cto_consumption) >= Number(dbRow.cto_limit)) warningReason = 'CTO Limit Exceeded';
-          else if (Number(dbRow.reuse_percent) <= (Number(dbRow.reuse_target) - 15)) warningReason = 'Reuse Target Not Achieved';
+          if (Number(dbRow.current_cto_consumption) >= Number(dbRow.daily_cto_limit)) warningReason = 'CTO Limit Exceeded';
+          else if (Number(dbRow.current_reuse_percentage) <= (Number(dbRow.daily_reuse_target) - 15)) warningReason = 'Reuse Target Not Achieved';
           else if (dbRow.water_quality_abnormal) warningReason = 'Abnormal Water Quality';
           else warningReason = 'CTO Expired';
         } else if (dbRow.compliance_status === 'Warning') {
-          if (Number(dbRow.cto_consumption) >= (Number(dbRow.cto_limit) * 0.85)) warningReason = 'Approaching CTO Limit';
-          else if (Number(dbRow.reuse_percent) < Number(dbRow.reuse_target)) warningReason = 'Slightly Below Target';
+          if (Number(dbRow.current_cto_consumption) >= (Number(dbRow.daily_cto_limit) * 0.85)) warningReason = 'Approaching CTO Limit';
+          else if (Number(dbRow.current_reuse_percentage) < Number(dbRow.daily_reuse_target)) warningReason = 'Slightly Below Target';
           else warningReason = 'CTO Expiring Soon';
         }
 
         return {
-          id: dbRow.id,
-          name: dbRow.name || 'Unknown Industry',
-          email_id: dbRow.email_id || 'N/A',
+          id: dbRow.user_id || crypto.randomUUID(),
+          name: dbRow.industry_name || 'Unknown Industry',
+          email_id: dbRow.email || 'N/A',
           district: dbRow.district || 'Unknown',
-          ctoConsumption: Number(dbRow.cto_consumption) || 0,
-          ctoLimit: Number(dbRow.cto_limit) || 0,
-          reusePercent: Number(dbRow.reuse_percent) || 0,
-          reuseTarget: Number(dbRow.reuse_target) || 0,
+          ctoConsumption: Number(dbRow.current_cto_consumption) || 0,
+          ctoLimit: Number(dbRow.daily_cto_limit) || 0,
+          reusePercent: Number(dbRow.current_reuse_percentage) || 0,
+          reuseTarget: Number(dbRow.daily_reuse_target) || 0,
           status: dbRow.compliance_status || 'Safe',
           warningReason,
           ctoValidity: ctoValidity,
-          lastUpdated: new Date(dbRow.created_at || new Date()).toLocaleString(),
+          lastUpdated: new Date(dbRow.last_warning_date || new Date()).toLocaleString(),
           
           address: `${dbRow.district || 'Industrial'} Sector, Tamil Nadu`,
           type: "Manufacturing",
-          ctoNumber: `CTO-${(dbRow.id || 'XXXX').substring(0, 8).toUpperCase()}`,
+          ctoNumber: `CTO-${(dbRow.user_id || 'XXXX').toString().substring(0, 8).toUpperCase()}`,
           ctoValidUntil: dbRow.cto_valid_until ? new Date(dbRow.cto_valid_until).toLocaleDateString() : 'N/A',
-          dailyFreshUsage: (Number(dbRow.cto_limit || 0) * (Number(dbRow.cto_consumption || 0) / 100)).toFixed(1),
-          dailyReusedWater: (Number(dbRow.cto_limit || 0) * (Number(dbRow.reuse_percent || 0) / 100)).toFixed(1),
-          monthlyFreshUsage: (Number(dbRow.cto_limit || 0) * 30).toFixed(1),
-          monthlyReusedWater: (Number(dbRow.cto_limit || 0) * 30 * (Number(dbRow.reuse_percent || 0) / 100)).toFixed(1),
+          dailyFreshUsage: Number(dbRow.current_cto_consumption || 0).toFixed(1),
+          dailyReusedWater: (Number(dbRow.current_cto_consumption || 0) * (Number(dbRow.current_reuse_percentage || 0) / 100)).toFixed(1),
+          monthlyFreshUsage: Number(dbRow.monthly_cto_limit || 0).toFixed(1),
+          monthlyReusedWater: Number(dbRow.monthly_reuse_target || 0).toFixed(1),
           lastInspection: new Date().toLocaleDateString(),
           aiSummary,
-          govRecommendation
+          govRecommendation,
+          warningCount: Number(dbRow.warning_count) || 0
         };
       });
 
@@ -329,6 +335,14 @@ HydroNexa Government Monitoring Team`;
                           Issue Official Notice
                         </button>
                       )}
+                      {ind.status === 'Warning' && (
+                        <button 
+                          onClick={() => handleIssueNotice(ind)}
+                          className="bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs px-3 py-2 rounded shadow-sm transition-colors whitespace-nowrap w-full"
+                        >
+                          Inspect Official Notice
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -427,7 +441,7 @@ HydroNexa Government Monitoring Team`;
               {/* AI & Recommendations */}
               <div className="space-y-4">
                 <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-lg p-4">
-                  <h3 className="text-xs font-bold text-blue-800 dark:text-blue-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Brain className="w-4 h-4" /> AI Compliance Summary</h3>
+                  <h3 className="text-xs font-bold text-blue-800 dark:text-blue-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Brain className="w-4 h-4" /> Compliance Summary</h3>
                   <p className="text-sm text-blue-900 dark:text-blue-200 font-medium leading-relaxed">{selectedIndustry.aiSummary}</p>
                 </div>
 
@@ -443,6 +457,9 @@ HydroNexa Government Monitoring Team`;
                <button className="flex-1 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold py-2.5 rounded transition-colors text-sm">Download Full Report</button>
                {selectedIndustry.status === 'Critical' && (
                  <button onClick={() => handleIssueNotice(selectedIndustry)} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 rounded transition-colors text-sm shadow-sm">Issue Official Notice</button>
+               )}
+               {selectedIndustry.status === 'Warning' && (
+                 <button onClick={() => handleIssueNotice(selectedIndustry)} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2.5 rounded transition-colors text-sm shadow-sm">Inspect Official Notice</button>
                )}
             </div>
           </>

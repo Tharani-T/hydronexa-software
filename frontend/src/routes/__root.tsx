@@ -25,10 +25,10 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "HydroNexa Technologies — AI-Powered Industrial Water Intelligence" },
-      { name: "description", content: "AI & IoT-powered platform for industrial water monitoring, reuse optimization, and CTO compliance." },
+      { title: "HydroNexa Technologies — Intelligent Industrial Water Intelligence" },
+      { name: "description", content: "Intelligent & IoT-powered platform for industrial water monitoring, reuse optimization, and CTO compliance." },
       { property: "og:title", content: "HydroNexa Technologies" },
-      { property: "og:description", content: "AI-Powered Industrial Water Compliance & Reuse Monitoring" },
+      { property: "og:description", content: "Intelligent Industrial Water Compliance & Reuse Monitoring" },
       { property: "og:type", content: "website" },
     ],
     links: [

@@ -15,7 +15,7 @@ const steps = [
   { title: "Plant Identity", icon: Building2 },
   { title: "Capacity & CTO", icon: Gauge },
   { title: "Operations", icon: Clock },
-  { title: "Alerts & AI", icon: BellRing },
+  { title: "Alerts & Intelligence", icon: BellRing },
 ];
 
 function Onboarding() {
@@ -215,12 +215,12 @@ function Onboarding() {
                           <FileText className="h-4 w-4 text-cyan" /> Upload CTO Document (PDF)
                         </h3>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Let AI verify and auto-fill your capacity and compliance settings.
+                          Let the System verify and auto-fill your capacity and compliance settings.
                         </p>
                       </div>
                       {aiVerified && (
                         <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full text-xs font-bold uppercase tracking-wider">
-                          <CheckCircle2 className="h-4 w-4" /> AI Verified
+                          <CheckCircle2 className="h-4 w-4" /> System Verified
                         </div>
                       )}
                     </div>
@@ -230,7 +230,7 @@ function Onboarding() {
                           <Download className="h-4 w-4" /> Upload PDF
                           <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={isVerifying} />
                         </label>
-                        {isVerifying && <span className="text-xs text-cyan animate-pulse flex items-center gap-2"><Sparkles className="h-3 w-3 animate-spin" /> Verifying document with AI...</span>}
+                        {isVerifying && <span className="text-xs text-cyan animate-pulse flex items-center gap-2"><Sparkles className="h-3 w-3 animate-spin" /> Verifying document with System...</span>}
                       </div>
 
                       {pdfPreviewUrl && (
@@ -279,7 +279,7 @@ function Onboarding() {
                       })}
                     </div>
                   </div>
-                  <Toggle label="AI Monitoring" value={!!s.aiMonitoring} onChange={(v) => updateSetup({ aiMonitoring: v })} />
+                  <Toggle label="Intelligent Monitoring" value={!!s.aiMonitoring} onChange={(v) => updateSetup({ aiMonitoring: v })} />
                   <Toggle label="Compliance Alerts" value={!!s.complianceAlerts} onChange={(v) => updateSetup({ complianceAlerts: v })} />
                   <Toggle label="Sustainability Reports" value={!!s.sustainabilityReports} onChange={(v) => updateSetup({ sustainabilityReports: v })} />
                 </div>

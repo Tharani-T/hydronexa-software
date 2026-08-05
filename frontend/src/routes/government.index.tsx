@@ -5,6 +5,8 @@ import slider1 from "@/assets/gov-slider-1.png";
 import slider2 from "@/assets/gov-slider-2.png";
 import slider3 from "@/assets/gov-slider-3.png";
 import slider4 from "@/assets/gov-slider-4.png";
+import { GovLanguageProvider } from "@/government/utils/GovLanguageContext";
+import { GovLanguageSelector } from "@/government/dashboard/components/GovLanguageSelector";
 
 const backgroundImages = [slider1, slider2, slider3, slider4];
 
@@ -23,7 +25,8 @@ function GovernmentLanding() {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col font-sans bg-white text-slate-900">
+    <GovLanguageProvider>
+      <div className="min-h-screen flex flex-col font-sans bg-white text-slate-900">
       {/* Official Top Bar */}
       <div className="bg-slate-900 text-white py-1.5 px-6 text-xs flex justify-between items-center">
         <div className="max-w-7xl mx-auto w-full flex flex-col sm:flex-row justify-between items-center gap-2">
@@ -62,6 +65,7 @@ function GovernmentLanding() {
             >
               Government Login
             </Link>
+            <GovLanguageSelector />
           </nav>
         </div>
       </header>
@@ -98,7 +102,7 @@ function GovernmentLanding() {
             </h1>
             
             <h2 className="text-xl md:text-2xl font-semibold text-blue-100 mb-8 drop-shadow max-w-4xl mx-auto leading-snug">
-              AI-Powered Water Reuse & CTO Compliance Monitoring Platform
+              Intelligent Water Reuse & CTO Compliance Monitoring Platform
             </h2>
             
             <p className="text-lg md:text-xl text-slate-200 max-w-4xl mx-auto leading-relaxed mb-12 drop-shadow">
@@ -216,6 +220,7 @@ function GovernmentLanding() {
         </div>
       </footer>
     </div>
+    </GovLanguageProvider>
   );
 }
 

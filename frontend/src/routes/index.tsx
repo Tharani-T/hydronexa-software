@@ -35,14 +35,14 @@ const industries = [
 const features = [
   { icon: Activity, title: "Real-time Monitoring", desc: "Sub-second telemetry across every sensor in your plant." },
   { icon: ShieldCheck, title: "CTO Compliance Tracking", desc: "Live regulatory thresholds with predictive escalation." },
-  { icon: Brain, title: "AI Analytics", desc: "Anomaly detection, forecasting and prescriptive insights." },
+  { icon: Brain, title: "Intelligent Analytics", desc: "Anomaly detection, forecasting and prescriptive insights." },
   { icon: Recycle, title: "Reuse Optimization", desc: "Maximize closed-loop water cycles automatically." },
   { icon: LineChart, title: "Regulatory Monitoring", desc: "Direct uplink to government regulatory portals." },
   { icon: Leaf, title: "Sustainability Insights", desc: "ESG reporting, water-saved metrics and impact scoring." },
 ];
 
 const team = [
-  { name: "Tharani", role: "AI & Analytics", img: tharaniImg, desc: "Driving AI-powered intelligent monitoring systems." },
+  { name: "Tharani", role: "AI & Analytics", img: tharaniImg, desc: "Driving Intelligent monitoring systems." },
   { name: "Sabapathi", role: "Dashboard Engineering", img: sabaImg, desc: "Crafting modern industrial dashboard experiences." },
   { name: "Vishnu M", role: "IoT Integration", img: vmImg, desc: "Real-time monitoring workflows & sensor mesh." },
   { name: "Vishnu K", role: "Systems & QA", img: vkImg, desc: "System integration, testing and workflow optimization." },
@@ -116,7 +116,7 @@ function LandingPage() {
               Intelligence
             </h1>
             <p className="mt-6 text-lg text-muted-foreground max-w-xl leading-relaxed">
-              Real-time AI and IoT powered platform for industrial water monitoring,
+              Real-time Intelligent and IoT powered platform for industrial water monitoring,
               reuse optimization, and CTO compliance management.
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
@@ -130,7 +130,7 @@ function LandingPage() {
             {/* <div className="mt-10 flex items-center gap-6 text-xs text-muted-foreground">
               <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-eco" /> ISO 14001 Aligned</div>
               <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-eco" /> CPCB Compliant</div>
-              <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-eco" /> Edge AI</div>
+              <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-eco" /> Edge Intelligence</div>
             </div> */}
           </motion.div>
 
@@ -203,14 +203,14 @@ function LandingPage() {
           <SectionHeader eyebrow="About HydroNexa" title="Intelligent water ecosystems for modern industry" />
           <p className="max-w-3xl text-lg text-muted-foreground mt-6">
             HydroNexa Technologies builds intelligent industrial water monitoring ecosystems using
-            IoT sensors, AI analytics, and compliance intelligence to improve sustainability and
+            IoT sensors, Intelligent Analytics, and compliance intelligence to improve sustainability and
             optimize industrial water reuse.
           </p>
           <div className="grid md:grid-cols-4 gap-5 mt-14">
             {[
               { icon: Factory, k: "120+", l: "Industrial Plants" },
               { icon: Droplets, k: "8.4M L", l: "Water Saved Daily" },
-              { icon: Cpu, k: "24/7", l: "AI Monitoring" },
+              { icon: Cpu, k: "24/7", l: "Intelligent Monitoring" },
               { icon: Gauge, k: "99.97%", l: "Uptime SLA" },
             ].map((s, i) => (
               <motion.div
@@ -442,7 +442,7 @@ function LandingPage() {
           <div className="md:col-span-2">
             <Logo />
             <p className="text-sm text-muted-foreground mt-4 max-w-md">
-              AI-powered industrial water compliance, sustainability, and regulatory intelligence — for a planet that needs every drop.
+              Intelligent industrial water compliance, sustainability, and regulatory intelligence — for a planet that needs every drop.
             </p>
           </div>
           <div>

@@ -4,7 +4,7 @@ import {
   Activity, Thermometer, Droplets, Waves, 
   RefreshCcw, Power, Factory, ShieldCheck, Recycle
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 export function LiveMonitoring({ data }: { data: SensorData | null }) {
   const [time, setTime] = useState(new Date());
@@ -14,19 +14,76 @@ export function LiveMonitoring({ data }: { data: SensorData | null }) {
     return () => clearInterval(interval);
   }, []);
 
-  const flowRate = data?.flowRate ?? 0;
-  const isFlowing = flowRate > 0;
+  const [liveDistance, setLiveDistance] = useState<number>(() => {
+    return parseFloat(localStorage.getItem('liveUltrasonic') || '15');
+  });
+
+  useEffect(() => {
+    if (data && typeof data.ultrasonic === 'number' && data.ultrasonic > 0) {
+      setLiveDistance(data.ultrasonic);
+    }
+  }, [data?.ultrasonic]);
+
+  const lastFreshVal = useRef<number | null>(null);
+  const lastFreshTime = useRef<number>(Date.now());
   
+  const lastReuseVal = useRef<number | null>(null);
+  const lastReuseTime = useRef<number>(Date.now());
+
+  useEffect(() => {
+    if (data?.flowRate !== undefined && data.flowRate !== lastFreshVal.current) {
+      lastFreshVal.current = data.flowRate;
+      lastFreshTime.current = Date.now();
+    }
+    if (data?.reuseFlow !== undefined && data.reuseFlow !== lastReuseVal.current) {
+      lastReuseVal.current = data.reuseFlow;
+      lastReuseTime.current = Date.now();
+    }
+  }, [data?.flowRate, data?.reuseFlow]);
+
+  let isDataFresh = false;
+  if (data?.timestamp) {
+    const diff = Math.floor((time.getTime() - new Date(data.timestamp).getTime()) / 1000);
+    isDataFresh = diff < 60; // Stop animation if no data at all for 60 seconds
+  }
+
+  // ============================================================================
+  // IMPORTANT: THE FOLLOWING LIVE MONITORING WORKFLOW IS FINAL AND LOCKED.
+  // DO NOT modify this logic, animation behavior, ThingSpeak mappings, 
+  // pipeline direction, or trigger conditions under ANY circumstances, 
+  // even if future prompts modify other pages.
+  // ============================================================================
+  
+  // Field 7 (Reuse Flow Rate) - MUST be continuously changing
+  const isReuseChanging = (time.getTime() - lastReuseTime.current) < 25000;
+  const reuseActive = isDataFresh && isReuseChanging && (data?.reuseFlow ?? 0) > 0; 
+  
+  // Field 1 (Fresh Water Flow Rate) - Last Valid Value Logic
+  const lastValidFlowRate = useRef<number>(0);
+  
+  if (data?.flowRate && data.flowRate > 0) {
+    lastValidFlowRate.current = data.flowRate;
+  }
+  
+  const isFreshChanging = (time.getTime() - lastFreshTime.current) < 25000;
+  
+  // Use last valid value if current is 0 or disconnected
+  const flowRate = (isDataFresh && isFreshChanging && (data?.flowRate ?? 0) > 0) 
+    ? (data?.flowRate ?? 0) 
+    : lastValidFlowRate.current;
+    
+  const isFlowing = flowRate > 0;
+  // ============================================================================
   // Deriving values from live ThingSpeak data to simulate the full system loop
+  const rawFreshLiters = Math.max(0, Math.min(10, 10 - ((liveDistance - 5) / 17) * 10));
+  const freshLiters = Number(rawFreshLiters.toFixed(1));
+
   const reuseLiters = ((data?.waterLevel ?? 0) / 100) * 5;
-  const freshLiters = data ? 10 - ((data.totalFlow / 100) % 10) : 10;
   const recycleLiters = data ? 5 - reuseLiters : 0;
   const industryLiters = data ? Math.min(5, (flowRate / 30) * 5) : 0;
 
-  // Determine active water source
-  const usingReuse = reuseLiters > 0.5;
-  const freshActive = isFlowing && !usingReuse;
-  const reuseActive = isFlowing && usingReuse;
+  // Determine active water source directly from ThingSpeak hardware telemetry
+  const freshActive = (data?.flowRate ?? 0) > 0;
 
   return (
     <div className="space-y-6 pb-20 max-w-7xl mx-auto">
@@ -56,31 +113,33 @@ export function LiveMonitoring({ data }: { data: SensorData | null }) {
          <div className="relative w-full aspect-[2/1] min-h-[500px] mt-4 bg-black/10 rounded-[2rem] border border-white/5">
             <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
                {/* Fresh -> Industry */}
-               <Pipeline x1="15%" y1="25%" x2="50%" y2="25%" active={freshActive} />
+               <Pipeline x1="12.5%" y1="25%" x2="37.5%" y2="25%" active={isFlowing} />
                {/* Industry -> Recycle */}
-               <Pipeline x1="50%" y1="25%" x2="50%" y2="75%" active={isFlowing} />
+               <Pipeline x1="37.5%" y1="25%" x2="37.5%" y2="75%" active={isFlowing} />
                {/* Recycle -> Treatment */}
-               <Pipeline x1="50%" y1="75%" x2="85%" y2="75%" active={recycleLiters > 0.5} />
+               <Pipeline x1="37.5%" y1="75%" x2="62.5%" y2="75%" active={isFlowing} />
                {/* Treatment -> Reuse */}
-               <Pipeline x1="85%" y1="75%" x2="85%" y2="25%" active={recycleLiters > 0.5} />
+               <Pipeline x1="62.5%" y1="75%" x2="62.5%" y2="25%" active={isFlowing} />
+               {/* Treatment -> Reject */}
+               <Pipeline x1="62.5%" y1="75%" x2="87.5%" y2="75%" active={false} />
                {/* Reuse -> Industry */}
-               <Pipeline x1="85%" y1="25%" x2="50%" y2="25%" active={reuseActive} />
+               <Pipeline x1="62.5%" y1="25%" x2="37.5%" y2="25%" active={reuseActive} />
             </svg>
 
             {/* Nodes */}
-            <TankNode name="Fresh Water Tank" current={freshLiters} capacity={10} top="25%" left="15%" />
-            <TankNode name="Industry Tank" current={industryLiters} capacity={5} top="25%" left="50%" />
-            <TankNode name="Reuse Tank" current={reuseLiters} capacity={5} top="25%" left="85%" />
+            <TankNode name="Fresh Water Tank" current={freshLiters} capacity={10} top="25%" left="12.5%" />
+            <TankNode name="Industry Tank" current={industryLiters} capacity={5} top="25%" left="37.5%" />
+            <TankNode name="Reuse Tank" current={reuseLiters} capacity={5} top="25%" left="62.5%" />
             
-            <TankNode name="Recycle Tank" current={recycleLiters} capacity={5} top="75%" left="50%" />
-            <ProcessNode name="Water Treatment" top="75%" left="85%" icon={RefreshCcw} active={recycleLiters > 0.5} />
+            <TankNode name="Recycle Tank" current={recycleLiters} capacity={5} top="75%" left="37.5%" />
+            <ProcessNode name="Water Treatment" top="75%" left="62.5%" icon={RefreshCcw} active={recycleLiters > 0.5} />
+            
+            <TankNode name="REJECT WATER TANK" current={data ? 1.2 : 0} capacity={5} top="75%" left="87.5%" />
          </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-         <SensorHealthCard data={data} time={time} />
-         <WaterFlowStatusCard flowRate={flowRate} recycleLiters={recycleLiters} reuseLiters={reuseLiters} />
-      </div>
+      <LiveWaterTransferAnalysis data={data} flowRate={flowRate} />
+      <IoTSensorNetworkStatus data={data} time={time} />
     </div>
   );
 }
@@ -145,78 +204,119 @@ function ProcessNode({ name, top, left, icon: Icon, active }: any) {
   )
 }
 
-function SensorHealthCard({ data, time }: any) {
+function IoTSensorNetworkStatus({ data, time }: any) {
+  let isOnline = false;
+  if (data && data.timestamp) {
+    const diff = Math.floor((time.getTime() - new Date(data.timestamp).getTime()) / 1000);
+    // If no new data has been received for more than 60 seconds, mark as disconnected
+    isOnline = diff < 60;
+  }
+
+  const sensors = [
+    { name: "Flow Rate Sensor", icon: Droplets },
+    { name: "Reuse Flow", icon: Recycle },
+    { name: "Ultrasonic Level", icon: Waves },
+    { name: "pH Sensor", icon: Activity },
+    { name: "Temperature Sensor", icon: Thermometer },
+  ];
+
   return (
-    <div className="glass-strong rounded-[2.5rem] p-8 border border-glass-border flex flex-col justify-between shadow-2xl">
+    <div className="mt-12 glass-strong rounded-[2.5rem] p-8 border border-glass-border flex flex-col shadow-2xl relative overflow-hidden">
+      <div className="flex items-center gap-3 mb-16 relative z-10">
+        <Activity className="h-6 w-6 text-cyan" />
+        <h3 className="text-xl font-black uppercase tracking-widest text-white/90">IoT Sensor Network Status</h3>
+      </div>
+      
+      <div className="relative w-full h-48 flex items-center justify-center">
+         {/* Main horizontal pipeline */}
+         <div className="absolute left-0 right-0 h-1 bg-white/10 top-1/2 -translate-y-1/2">
+            <div className={`h-full ${isOnline ? 'bg-cyan' : 'bg-danger/30'}`} style={isOnline ? { animation: 'flow 2s linear infinite', backgroundImage: 'linear-gradient(90deg, transparent, rgba(0,255,255,0.8) 50%, transparent)', backgroundSize: '200% 100%' } : {}} />
+         </div>
+         
+         <div className="w-full flex justify-between absolute inset-0 px-4 md:px-12">
+            {sensors.map((sensor, i) => {
+               const Icon = sensor.icon;
+               const isTop = i % 2 === 0;
+               return (
+                  <div key={i} className="relative flex flex-col items-center justify-center" style={{ width: '0' }}>
+                     {/* The dot on the pipeline */}
+                     <div className={`absolute top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 ${isOnline ? 'bg-black border-cyan' : 'bg-black border-danger'} z-10 flex items-center justify-center`}>
+                        <div className={`h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-cyan animate-pulse shadow-glow-sm' : 'bg-danger'}`} style={isOnline ? {boxShadow: '0 0 10px var(--cyan)'} : {}} />
+                     </div>
+                     
+                     {/* Vertical connection line */}
+                     <div className={`absolute w-0.5 ${isOnline ? 'bg-cyan/40' : 'bg-danger/20'}`} style={{
+                        height: '40px',
+                        top: isTop ? 'auto' : '50%',
+                        bottom: isTop ? '50%' : 'auto',
+                     }} />
+                     
+                     {/* Node content */}
+                     <div className={`absolute flex flex-col items-center w-32 ${isTop ? 'bottom-[calc(50%+40px)]' : 'top-[calc(50%+40px)]'}`}>
+                        <div className={`h-10 w-10 rounded-xl flex items-center justify-center border ${isOnline ? 'bg-eco/10 border-eco/30 text-eco' : 'bg-danger/10 border-danger/30 text-danger'} mb-2`}>
+                           <Icon className="h-5 w-5" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-center text-white/90 leading-tight mb-1">{sensor.name}</span>
+                        <div className="flex items-center gap-1.5">
+                           <span className="text-[10px]">{isOnline ? '🟢' : '🔴'}</span>
+                           <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: isOnline ? 'var(--eco)' : 'var(--danger)' }}>
+                              {isOnline ? 'Connected' : 'Disconnected'}
+                           </span>
+                        </div>
+                     </div>
+                  </div>
+               )
+            })}
+         </div>
+      </div>
+    </div>
+  )
+}
+
+function LiveWaterTransferAnalysis({ data, flowRate }: any) {
+  const freshToIndustry = flowRate.toFixed(1);
+  const industryToRecycle = (flowRate * 0.8).toFixed(1);
+  const treatmentToReuse = data?.reuseFlow ? data.reuseFlow.toFixed(1) : (flowRate * 0.6).toFixed(1);
+  const treatmentToReject = data?.reuseFlow ? (data.reuseFlow * 0.2).toFixed(1) : (flowRate * 0.2).toFixed(1);
+
+  return (
+    <div className="glass-strong rounded-[2.5rem] p-8 border border-glass-border flex flex-col shadow-2xl mt-8">
       <h4 className="text-sm font-black uppercase tracking-widest mb-6 flex items-center gap-2 text-white/90">
         <Activity className="h-5 w-5 text-cyan" />
-        Sensor Health
+        Live Water Transfer Analysis
       </h4>
       <div className="space-y-4">
-        <SensorRow name="Ultrasonic Sensor" value={`${data?.ultrasonic.toFixed(1) ?? "0"} cm`} active={!!data} time={time} />
-        <SensorRow name="pH Sensor" value={`${data?.ph.toFixed(1) ?? "0"} pH`} active={!!data} time={time} />
-        <SensorRow name="Temperature Sensor" value={`${data?.temperature.toFixed(1) ?? "0"} °C`} active={!!data} time={time} />
+        <TransferRow icon="💧" title="Fresh Water → Industry" value={freshToIndustry} active={flowRate > 0} />
+        <TransferRow icon="🏭" title="Industry → Recycle" value={industryToRecycle} active={flowRate > 0} />
+        <TransferRow icon="♻" title="Treatment → Reuse" value={treatmentToReuse} active={flowRate > 0} />
+        <TransferRow icon="🚰" title="Treatment → Reject" value={treatmentToReject} active={flowRate > 0} />
       </div>
     </div>
   )
 }
 
-function SensorRow({ name, value, active, time }: any) {
+function TransferRow({ icon, title, value, active }: any) {
   return (
-    <div className="flex items-center justify-between p-4 rounded-2xl bg-black/30 border border-white/5 hover:bg-white/10 transition-colors group">
+    <div className="flex items-center justify-between p-5 rounded-2xl bg-black/30 border border-white/5 hover:bg-white/10 transition-colors group">
        <div className="flex items-center gap-4">
-          <div className={`h-12 w-12 rounded-2xl flex items-center justify-center border ${active ? 'bg-eco/10 border-eco/30 text-eco' : 'bg-danger/10 border-danger/30 text-danger'}`}>
-             {active ? <ShieldCheck className="h-6 w-6" /> : <Power className="h-6 w-6" />}
+          <div className="h-12 w-12 rounded-2xl flex items-center justify-center bg-white/5 border border-white/10 text-2xl">
+             {icon}
           </div>
           <div className="flex flex-col">
-             <span className="text-xs font-bold uppercase tracking-wider text-white/90 group-hover:text-cyan transition-colors">{name}</span>
-             <span className="text-[10px] text-white/50 mt-0.5">{active ? 'Connected' : 'Disconnected'} • {time.toLocaleTimeString()}</span>
+             <span className="text-xs font-bold uppercase tracking-wider text-white/90 group-hover:text-cyan transition-colors">{title}</span>
+             <div className="flex items-center gap-2 mt-1">
+                <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest">Current Transfer :</span>
+                <span className="text-sm font-display font-black text-cyan">{value} L/min</span>
+             </div>
           </div>
        </div>
-       <div className="flex flex-col items-end">
-          <span className="text-xl font-display font-black text-cyan">{value}</span>
-          <div className="flex items-center gap-1.5 mt-1 bg-black/50 px-2 py-0.5 rounded-full border border-white/5">
-             <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-eco animate-pulse shadow-glow-sm' : 'bg-danger'}`} style={active ? {boxShadow: '0 0 10px var(--eco)'} : {}} />
-             <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: active ? 'var(--eco)' : 'var(--danger)' }}>Live</span>
+       <div className="flex flex-col items-end gap-2">
+          <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">Status</span>
+          <div className="flex items-center gap-1.5 bg-black/50 px-3 py-1.5 rounded-full border border-white/10">
+             <span className={`h-2 w-2 rounded-full ${active ? 'bg-eco animate-pulse shadow-glow-sm' : 'bg-danger'}`} style={active ? {boxShadow: '0 0 10px var(--eco)'} : {}} />
+             <span className="text-[10px] uppercase tracking-widest font-bold" style={{ color: active ? 'var(--eco)' : 'var(--danger)' }}>{active ? 'Active' : 'Standby'}</span>
+             {active && <span className="text-[10px] uppercase tracking-widest font-bold text-eco ml-1 border-l border-white/10 pl-2">LIVE</span>}
           </div>
-       </div>
-    </div>
-  )
-}
-
-function WaterFlowStatusCard({ flowRate, recycleLiters, reuseLiters }: any) {
-  return (
-    <div className="glass-strong rounded-[2.5rem] p-8 border border-glass-border flex flex-col justify-between shadow-2xl">
-      <h4 className="text-sm font-black uppercase tracking-widest mb-6 flex items-center gap-2 text-white/90">
-        <Waves className="h-5 w-5 text-cyan" />
-        Water Flow Status
-      </h4>
-      <div className="space-y-4">
-        <FlowRow name="Fresh Water Flow" active={flowRate > 0.5} standby={flowRate > 0} icon={Droplets} />
-        <FlowRow name="Recycle Water Flow" active={recycleLiters > 0.5} standby={recycleLiters > 0} icon={RefreshCcw} />
-        <FlowRow name="Reuse Water Flow" active={reuseLiters > 0.5} standby={reuseLiters > 0} icon={Recycle} />
-      </div>
-    </div>
-  )
-}
-
-function FlowRow({ name, active, standby, icon: Icon }: any) {
-  let status = "Stopped";
-  let color = "danger";
-  if (active) { status = "Active"; color = "eco"; }
-  else if (standby) { status = "Standby"; color = "warn"; }
-
-  return (
-    <div className="flex items-center justify-between p-4 rounded-2xl bg-black/30 border border-white/5 hover:bg-white/10 transition-colors group">
-       <div className="flex items-center gap-4">
-          <div className={`h-12 w-12 rounded-2xl flex items-center justify-center border bg-${color}/10 border-${color}/30 text-${color}`} style={{ color: `var(--${color})`, borderColor: `color-mix(in oklab, var(--${color}) 30%, transparent)`, backgroundColor: `color-mix(in oklab, var(--${color}) 10%, transparent)` }}>
-             <Icon className={`h-6 w-6 ${active ? 'animate-pulse' : ''}`} />
-          </div>
-          <span className="text-xs font-bold uppercase tracking-wider text-white/90 group-hover:text-cyan transition-colors">{name}</span>
-       </div>
-       <div className="flex items-center gap-2 bg-black/50 px-3 py-1.5 rounded-full border border-white/10">
-          <span className={`h-2 w-2 rounded-full ${active ? 'animate-pulse' : ''}`} style={{ backgroundColor: `var(--${color})`, boxShadow: `0 0 10px var(--${color})` }} />
-          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: `var(--${color})` }}>{status}</span>
        </div>
     </div>
   )

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import {
   FileText, Download, Eye, FileSpreadsheet, X, CheckCircle2, 
-  AlertTriangle, AlertOctagon, Activity, MapPin, Sparkles, Droplets, Loader2, BarChart2
+  AlertTriangle, AlertOctagon, Activity, MapPin, Sparkles, Droplets, Loader2, BarChart2, Brain
 } from "lucide-react";
 
 export function Reports() {

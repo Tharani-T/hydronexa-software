@@ -1,14 +1,59 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { 
   Factory, Activity, ShieldCheck, AlertTriangle, 
   ChevronRight, FileText, Download, Send, Clock, 
-  Droplets, AlertCircle
+  Droplets, AlertCircle, MapPin, X
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+
+const getDistrictCoordinates = (district: string = '') => {
+  const coords: Record<string, {x: number, y: number}> = {
+    'Chennai': { x: 80, y: 15 },
+    'Coimbatore': { x: 25, y: 50 },
+    'Madurai': { x: 45, y: 70 },
+    'Tirupur': { x: 30, y: 55 },
+    'Erode': { x: 35, y: 45 },
+    'Salem': { x: 50, y: 40 },
+    'Tiruchirappalli': { x: 55, y: 55 },
+    'Tirunelveli': { x: 40, y: 85 },
+    'Vellore': { x: 70, y: 20 },
+    'Thoothukudi': { x: 50, y: 80 },
+    'Kanchipuram': { x: 75, y: 20 },
+    'Chengalpattu': { x: 78, y: 25 },
+    'Tiruvallur': { x: 75, y: 12 },
+    'Cuddalore': { x: 70, y: 45 },
+    'Villupuram': { x: 65, y: 35 },
+    'Dindigul': { x: 40, y: 60 },
+    'Thanjavur': { x: 65, y: 60 },
+    'Kanyakumari': { x: 35, y: 95 },
+    'Dharmapuri': { x: 45, y: 30 },
+    'Krishnagiri': { x: 40, y: 20 }
+  };
+  
+  const d = district.trim();
+  if (!coords[d]) {
+     let hash = 0;
+     for (let i = 0; i < d.length; i++) hash = d.charCodeAt(i) + ((hash << 5) - hash);
+     return { x: 30 + (Math.abs(hash) % 40), y: 30 + (Math.abs(hash >> 8) % 40) };
+  }
+  return coords[d];
+};
+
+const getMarkerPosition = (district: string, id: string) => {
+   const base = getDistrictCoordinates(district);
+   let hash = 0;
+   for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+   const offsetX = (hash % 10) - 5;
+   const offsetY = ((hash >> 4) % 10) - 5;
+   return { x: base.x + (offsetX * 0.4), y: base.y + (offsetY * 0.4) };
+};
 
 export function Overview() {
   const [industries, setIndustries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [mapIndustries, setMapIndustries] = useState<any[]>([]);
+  const [selectedMarker, setSelectedMarker] = useState<any | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -39,7 +84,43 @@ export function Overview() {
       }
     };
     fetchData();
+
+    const fetchMapData = async () => {
+      try {
+        const { data, error } = await supabase.from('industry').select('*');
+        if (!error && data) {
+          setMapIndustries(data);
+        }
+      } catch(e) {}
+    };
+    fetchMapData();
+
+    const subscription = supabase.channel('industry_map_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'industry' }, () => {
+         fetchMapData();
+      }).subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
   }, []);
+
+  const mapMarkers = useMemo(() => {
+    return mapIndustries.map(ind => {
+        const pos = getMarkerPosition(ind.district || 'Unknown', ind.user_id || ind.id || Math.random().toString());
+        let color = 'bg-emerald-500';
+        let ringColor = 'ring-emerald-500/30';
+        if (ind.compliance_status === 'Warning') { color = 'bg-amber-500'; ringColor = 'ring-amber-500/30'; }
+        if (ind.compliance_status === 'Critical') { color = 'bg-red-500'; ringColor = 'ring-red-500/30'; }
+        
+        return {
+           ...ind,
+           pos,
+           color,
+           ringColor
+        };
+    });
+  }, [mapIndustries]);
 
   const kpis = [
     { label: "Registered Industries", value: "10", icon: Factory, color: "text-blue-600 dark:text-blue-400" },
@@ -119,151 +200,126 @@ export function Overview() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        
-        {/* Left Column (Table + Line Chart) */}
-        <div className="xl:col-span-2 space-y-6">
-          
-          {/* SECTION 4 – Monthly Compliance Trend */}
-          <div className="bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 rounded-lg p-6 shadow-sm">
-            <h3 className="text-base font-semibold mb-6 flex items-center gap-2"><Activity className="w-5 h-5 text-blue-600" /> Monthly Compliance Trend</h3>
-            <div className="h-40 w-full relative">
-               <svg viewBox="0 0 400 100" className="w-full h-full preserve-aspect-ratio-none overflow-visible">
-                 <path d="M0,80 Q50,90 100,60 T200,40 T300,50 T400,20" fill="none" stroke="#0F6CBD" strokeWidth="3" />
-                 <path d="M0,100 L0,80 Q50,90 100,60 T200,40 T300,50 T400,20 L400,100 Z" fill="#0F6CBD" fillOpacity="0.1" />
-                 {[0, 100, 200, 300, 400].map((x, i) => (
-                   <circle key={i} cx={x} cy={i === 0 ? 80 : i === 1 ? 60 : i === 2 ? 40 : i === 3 ? 50 : 20} r="5" fill="#0F6CBD" className="stroke-white dark:stroke-[#1E293B]" strokeWidth="2" />
-                 ))}
-               </svg>
-               <div className="flex justify-between text-xs font-semibold text-slate-500 mt-4 px-1">
-                 <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span>
-               </div>
-            </div>
-          </div>
-
-          {/* SECTION 5 – Industry Monitoring Table */}
-          <div className="bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
-              <h3 className="text-base font-semibold">Live Industry Monitoring</h3>
-              <button className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">View All &rarr;</button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
-                  <tr>
-                    <th className="px-5 py-4 font-semibold">Industry Name</th>
-                    <th className="px-5 py-4 font-semibold">CTO Usage</th>
-                    <th className="px-5 py-4 font-semibold">Water Reuse</th>
-                    <th className="px-5 py-4 font-semibold">Status</th>
-                    <th className="px-5 py-4 font-semibold">Last Updated</th>
-                    <th className="px-5 py-4 font-semibold text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
-                  {loading ? (
-                    <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-500 font-medium">Loading data...</td></tr>
-                  ) : industries.map((ind, i) => (
-                    <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                      <td className="px-5 py-4 font-semibold text-slate-900 dark:text-slate-100">{ind.name || ind.company || `Industry ${i+1}`}</td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2 w-full max-w-[120px]">
-                          <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                            <div className={`h-full ${ind.ctoUsage > 80 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${ind.ctoUsage || 50}%` }} />
-                          </div>
-                          <span className="text-xs font-semibold">{ind.ctoUsage || 50}%</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 font-medium">{ind.reuse || 0}%</td>
-                      <td className="px-5 py-4">
-                        {ind.status === 'Safe' ? <span className="text-emerald-600 dark:text-emerald-400 font-bold">Safe</span> :
-                         ind.status === 'Warning' ? <span className="text-amber-600 dark:text-amber-400 font-bold">Warning</span> :
-                         <span className="text-red-600 dark:text-red-400 font-bold">Critical</span>}
-                      </td>
-                      <td className="px-5 py-4 text-slate-500 text-xs font-medium">{ind.lastUpdated || 'Just now'}</td>
-                      <td className="px-5 py-4 text-right">
-                        <button className="text-blue-600 hover:text-blue-800 dark:text-blue-400 font-semibold text-xs border border-blue-200 dark:border-blue-800/50 px-3 py-1.5 rounded bg-blue-50 dark:bg-blue-900/20 transition-colors">View Details</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      {/* SECTION 5 – Industry Monitoring Table */}
+      <div className="bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm overflow-hidden w-full">
+        <div className="p-5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+          <h3 className="text-base font-semibold">Live Industry Monitoring</h3>
+          <button className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">View All &rarr;</button>
         </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+              <tr>
+                <th className="px-5 py-4 font-semibold">Industry Name</th>
+                <th className="px-5 py-4 font-semibold">CTO Usage</th>
+                <th className="px-5 py-4 font-semibold">Water Reuse</th>
+                <th className="px-5 py-4 font-semibold">Status</th>
+                <th className="px-5 py-4 font-semibold">Last Updated</th>
+                <th className="px-5 py-4 font-semibold text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+              {loading ? (
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-500 font-medium">Loading data...</td></tr>
+              ) : industries.map((ind, i) => (
+                <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                  <td className="px-5 py-4 font-semibold text-slate-900 dark:text-slate-100">{ind.name || ind.company || `Industry ${i+1}`}</td>
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-2 w-full max-w-[120px]">
+                      <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div className={`h-full ${ind.ctoUsage > 80 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${ind.ctoUsage || 50}%` }} />
+                      </div>
+                      <span className="text-xs font-semibold">{ind.ctoUsage || 50}%</span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 font-medium">{ind.reuse || 0}%</td>
+                  <td className="px-5 py-4">
+                    {ind.status === 'Safe' ? <span className="text-emerald-600 dark:text-emerald-400 font-bold">Safe</span> :
+                     ind.status === 'Warning' ? <span className="text-amber-600 dark:text-amber-400 font-bold">Warning</span> :
+                     <span className="text-red-600 dark:text-red-400 font-bold">Critical</span>}
+                  </td>
+                  <td className="px-5 py-4 text-slate-500 text-xs font-medium">{ind.lastUpdated || 'Just now'}</td>
+                  <td className="px-5 py-4 text-right">
+                    <button className="text-blue-600 hover:text-blue-800 dark:text-blue-400 font-semibold text-xs border border-blue-200 dark:border-blue-800/50 px-3 py-1.5 rounded bg-blue-50 dark:bg-blue-900/20 transition-colors">View Details</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-        {/* Right Column (Recommendations, Activity, Actions) */}
-        <div className="space-y-6">
+      {/* SECTION 1.5 - Tamil Nadu Industry Compliance Map (Moved to Bottom) */}
+      <div className="bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm p-6 w-full">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><MapPin className="w-5 h-5 text-blue-600" /> Tamil Nadu Industry Compliance Map</h3>
+        <div className="relative w-full h-[500px] bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+          {/* Abstract Map Background */}
+          <div className="absolute inset-0 opacity-10 flex items-center justify-center pointer-events-none">
+             <svg viewBox="0 0 100 100" className="w-full h-full max-h-[600px] text-slate-900 dark:text-slate-100" fill="currentColor">
+               <polygon points="40,5 60,5 80,15 90,25 85,45 80,65 70,75 60,85 55,95 40,98 30,95 25,85 30,70 25,60 15,55 5,45 15,35 30,25 40,15" />
+             </svg>
+          </div>
           
-          {/* SECTION 6 – Inspection Recommendations */}
-          <div className="bg-white dark:bg-[#1E293B] border-l-4 border-l-red-500 border-t-slate-200 border-r-slate-200 border-b-slate-200 dark:border-t-slate-700 dark:border-r-slate-700 dark:border-b-slate-700 rounded-r-lg p-5 shadow-sm">
-            <h3 className="text-base font-bold text-red-700 dark:text-red-400 flex items-center gap-2 mb-4"><AlertCircle className="w-5 h-5" /> Inspection Recommendations</h3>
-            
-            <div className="space-y-4">
-              <div className="bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-md p-4">
-                <div className="font-bold text-slate-900 dark:text-slate-100 text-sm">ABC Dyeing</div>
-                <div className="text-xs text-slate-600 dark:text-slate-400 mt-1.5"><span className="font-semibold text-slate-700 dark:text-slate-300">Reason:</span> Monthly CTO exceeded by 15%</div>
-                <div className="text-xs text-red-700 dark:text-red-400 mt-3 font-bold bg-red-100 dark:bg-red-500/20 inline-block px-2 py-1 rounded">Recommendation: Inspection Recommended</div>
-              </div>
+          {/* Markers */}
+          {mapMarkers.map((m, i) => (
+             <div 
+               key={i} 
+               className={`absolute w-3 h-3 rounded-full cursor-pointer ${m.color} ring-4 ${m.ringColor} hover:ring-8 transition-all z-10`}
+               style={{ left: `${m.pos.x}%`, top: `${m.pos.y}%`, transform: 'translate(-50%, -50%)' }}
+               onClick={() => setSelectedMarker(m)}
+             />
+          ))}
 
-              <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 rounded-md p-4">
-                <div className="font-bold text-slate-900 dark:text-slate-100 text-sm">XYZ Mills</div>
-                <div className="text-xs text-slate-600 dark:text-slate-400 mt-1.5"><span className="font-semibold text-slate-700 dark:text-slate-300">Reason:</span> Low Water Reuse (&lt; 30%)</div>
-                <div className="text-xs text-amber-700 dark:text-amber-400 mt-3 font-bold bg-amber-100 dark:bg-amber-500/20 inline-block px-2 py-1 rounded">Recommendation: Issue Warning Notice</div>
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION 8 – Quick Actions */}
-          <div className="bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 rounded-lg p-5 shadow-sm">
-            <h3 className="text-base font-semibold mb-4 text-slate-900 dark:text-slate-100">Quick Actions</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <button className="flex flex-col items-center justify-center p-4 border border-slate-200 dark:border-slate-700 rounded-md bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-xs font-semibold text-slate-700 dark:text-slate-300 gap-2">
-                <Factory className="w-5 h-5 text-blue-600 dark:text-blue-400" /> View All Industries
-              </button>
-              <button className="flex flex-col items-center justify-center p-4 border border-slate-200 dark:border-slate-700 rounded-md bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-xs font-semibold text-slate-700 dark:text-slate-300 gap-2">
-                <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" /> Generate Report
-              </button>
-              <button className="flex flex-col items-center justify-center p-4 border border-slate-200 dark:border-slate-700 rounded-md bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-xs font-semibold text-slate-700 dark:text-slate-300 gap-2">
-                <Download className="w-5 h-5 text-blue-600 dark:text-blue-400" /> Export PDF
-              </button>
-              <button className="flex flex-col items-center justify-center p-4 border border-red-200 dark:border-red-900/50 rounded-md bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors text-xs font-bold text-red-700 dark:text-red-400 gap-2 shadow-sm">
-                <Send className="w-5 h-5" /> Issue Notice
-              </button>
-            </div>
-          </div>
-
-          {/* SECTION 7 – Recent Activity */}
-          <div className="bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 rounded-lg p-5 shadow-sm">
-            <h3 className="text-base font-semibold mb-6 flex items-center gap-2 text-slate-900 dark:text-slate-100"><Clock className="w-5 h-5 text-blue-600" /> Recent Activity</h3>
-            <div className="space-y-6 pl-2 relative before:absolute before:inset-y-0 before:left-3.5 before:w-0.5 before:bg-slate-200 dark:before:bg-slate-700">
-              
-              <div className="relative pl-6">
-                <span className="absolute left-0 top-1 w-3 h-3 rounded-full bg-red-500 border-2 border-white dark:border-[#1E293B] shadow-sm" />
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">CTO limit exceeded</p>
-                <p className="text-xs font-medium text-slate-500 mt-0.5">ABC Dyeing • 10 mins ago</p>
-              </div>
-
-              <div className="relative pl-6">
-                <span className="absolute left-0 top-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-[#1E293B] shadow-sm" />
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Reuse target achieved</p>
-                <p className="text-xs font-medium text-slate-500 mt-0.5">Global Pharma • 2 hours ago</p>
-              </div>
-
-              <div className="relative pl-6">
-                <span className="absolute left-0 top-1 w-3 h-3 rounded-full bg-amber-500 border-2 border-white dark:border-[#1E293B] shadow-sm" />
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Water quality alert (pH)</p>
-                <p className="text-xs font-medium text-slate-500 mt-0.5">SteelTech Ind • 4 hours ago</p>
-              </div>
-
-              <div className="relative pl-6">
-                <span className="absolute left-0 top-1 w-3 h-3 rounded-full bg-blue-600 border-2 border-white dark:border-[#1E293B] shadow-sm" />
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">New industry registered</p>
-                <p className="text-xs font-medium text-slate-500 mt-0.5">EcoFoods Ltd • 1 day ago</p>
-              </div>
-
-            </div>
-          </div>
-
+          {/* Popup */}
+          {selectedMarker && (
+             <div 
+               className="absolute z-20 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl p-4 w-72"
+               style={{ 
+                 left: `${Math.min(Math.max(selectedMarker.pos.x, 10), 90)}%`, 
+                 top: `${Math.min(Math.max(selectedMarker.pos.y, 10), 90)}%`,
+                 transform: 'translate(-50%, -110%)'
+               }}
+             >
+               <button onClick={() => setSelectedMarker(null)} className="absolute top-2 right-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+                 <X className="w-4 h-4" />
+               </button>
+               <h4 className="font-bold text-slate-900 dark:text-slate-100 pr-6 truncate">{selectedMarker.industry_name || 'Unknown Industry'}</h4>
+               <p className="text-xs text-slate-500 font-medium mb-3 flex items-center gap-1"><MapPin className="w-3 h-3"/> {selectedMarker.district || 'Unknown District'}</p>
+               
+               <div className="space-y-2 text-sm mb-4">
+                 <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-1">
+                   <span className="text-slate-600 dark:text-slate-400">Status</span>
+                   <span className={`font-bold ${
+                     selectedMarker.compliance_status === 'Safe' ? 'text-emerald-600' :
+                     selectedMarker.compliance_status === 'Warning' ? 'text-amber-600' : 'text-red-600'
+                   }`}>{selectedMarker.compliance_status || 'Unknown'}</span>
+                 </div>
+                 <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-1">
+                   <span className="text-slate-600 dark:text-slate-400">CTO Consumption</span>
+                   <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedMarker.current_cto_consumption || 0} L</span>
+                 </div>
+                 <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-1">
+                   <span className="text-slate-600 dark:text-slate-400">Water Reuse</span>
+                   <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedMarker.current_reuse_percentage || 0}%</span>
+                 </div>
+                 <div className="flex justify-between pb-1">
+                   <span className="text-slate-600 dark:text-slate-400">Last Updated</span>
+                   <span className="font-semibold text-slate-700 dark:text-slate-300 text-xs">
+                     {selectedMarker.last_warning_date ? new Date(selectedMarker.last_warning_date).toLocaleDateString() : 'N/A'}
+                   </span>
+                 </div>
+               </div>
+               
+               <button 
+                 onClick={() => {
+                   window.dispatchEvent(new CustomEvent('gov-navigate', { detail: 'industries' }));
+                 }}
+                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded text-xs transition-colors"
+               >
+                 View Details
+               </button>
+             </div>
+          )}
         </div>
       </div>
 

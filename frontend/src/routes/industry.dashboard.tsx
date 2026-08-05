@@ -31,7 +31,7 @@ export const Route = createFileRoute("/industry/dashboard")({
 const nav = [
   { id: "overview", icon: LayoutDashboard, label: "Overview" },
   { id: "monitoring", icon: Activity, label: "Live Monitoring" },
-  { id: "analytics", icon: Waves, label: "Water Analytics" },
+  { id: "analytics", icon: Waves, label: "Storage Intelligence" },
   { id: "quality", icon: FlaskConical, label: "Quality Intelligence" },
 
   { id: "alerts", icon: AlertTriangle, label: "Alerts" },

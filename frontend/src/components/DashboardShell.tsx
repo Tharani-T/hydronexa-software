@@ -14,6 +14,7 @@ export function DashboardShell({
   title,
   subtitle,
   logoutTo,
+  headerRight,
 }: {
   navItems: { id: string; label: string; icon: any }[];
   active: string;
@@ -23,6 +24,7 @@ export function DashboardShell({
   title: string;
   subtitle: string;
   logoutTo: string;
+  headerRight?: ReactNode;
 }) {
   const { update } = useAppState();
   const navigate = useNavigate();
@@ -35,7 +37,7 @@ export function DashboardShell({
     navigate({ to: "/" });
   };
   return (
-    <div className="h-screen overflow-hidden flex bg-background">
+    <div className={`h-screen overflow-hidden flex bg-background ${logoutTo === "/government/login" ? 'gov-theme' : 'industry-theme'}`}>
       {/* Sidebar */}
       <aside className={`${isCollapsed ? 'w-20' : 'w-64'} border-r border-glass-border glass-strong flex-shrink-0 hidden lg:flex flex-col transition-all duration-300`}>
         <div className={`p-5 border-b border-glass-border flex ${isCollapsed ? 'justify-center' : 'justify-start'} overflow-hidden`}>
@@ -78,6 +80,7 @@ export function DashboardShell({
             <p className="text-xs text-muted-foreground">{subtitle}</p>
           </div>
           <div className="flex items-center gap-3">
+            {headerRight}
             <div className="relative">
               <button onClick={() => setShowNotifications(!showNotifications)} className="relative h-9 w-9 rounded-full glass border border-glass-border flex items-center justify-center hover:border-cyan transition">
                 <Bell className="h-4 w-4" />

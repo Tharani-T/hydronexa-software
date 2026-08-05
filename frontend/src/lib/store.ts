@@ -34,6 +34,8 @@ export interface SetupData {
   complianceAlerts?: boolean;
   sustainabilityReports?: boolean;
   completed?: boolean;
+  dailyReuseTarget?: number;
+  monthlyReuseTarget?: number;
 }
 
 export interface UserAccount {

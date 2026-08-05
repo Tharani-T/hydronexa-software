@@ -643,6 +643,52 @@ app.post('/api/send-email', async (req, res) => {
   }
 });
 
+// --- GOVERNMENT WORKFLOW LOGIC ---
+async function checkAndMarkCritical(userId, userEmail, currentCtoUsage, currentReusePercent) {
+  try {
+    const { data: setup } = await supabase.from('setups').select('*').eq('user_id', userId).single();
+    if (!setup) return;
+
+    const { data: alerts } = await supabase.from('alert_history').select('*').eq('user_id', userId);
+    const warningCount = alerts ? alerts.length : 1;
+
+    let complianceStatus = warningCount > 0 ? 'Warning' : 'Compliant';
+    let workflowStage = 'Normal';
+
+    if (warningCount >= 3) {
+      complianceStatus = 'Critical Violation';
+      workflowStage = 'Critical';
+    }
+
+    const industryData = {
+      user_id: userId,
+      industry_name: setup.plantname || 'Unknown',
+      district: setup.location || 'Unknown',
+      email: userEmail || 'N/A',
+      daily_cto_limit: setup.ctolimit || 0,
+      monthly_cto_limit: setup.monthlyctolimit || 0,
+      current_cto_consumption: currentCtoUsage || 0,
+      daily_reuse_target: setup.reusetarget || 0,
+      monthly_reuse_target: (setup.reusetarget || 0) * 30,
+      current_reuse_percentage: currentReusePercent || 0,
+      compliance_status: complianceStatus,
+      warning_count: warningCount,
+      last_warning_date: new Date(),
+      current_workflow_stage: workflowStage
+    };
+
+    const { data: existing } = await supabase.from('industry').select('*').eq('user_id', userId).maybeSingle();
+    
+    if (existing) {
+      await supabase.from('industry').update(industryData).eq('user_id', userId);
+    } else {
+      await supabase.from('industry').insert([industryData]);
+    }
+  } catch (err) {
+    console.error('Error in checkAndMarkCritical:', err);
+  }
+}
+
 app.post('/api/send-cto-alert', authenticateToken, async (req, res) => {
   try {
     const { to, industryName, dailyLimit, currentUsage, exceededAmount, timestamp } = req.body;
@@ -703,6 +749,8 @@ HydroNexa Monitoring Intelligence System`;
       });
 
     if (error) throw error;
+
+    await checkAndMarkCritical(userId, req.user.email, currentUsage, 0);
 
     res.json({ success: true, deliveryStatus });
   } catch (err) {
@@ -771,6 +819,8 @@ HydroNexa AI Water Intelligence Engine`;
       
     if (error) throw error;
 
+    await checkAndMarkCritical(userId, req.user.email, 0, 0);
+
     res.json({ success: true, deliveryStatus });
   } catch (err) {
     console.error('Quality Alert SMTP / Saving Error:', err);
@@ -793,3 +843,262 @@ app.get('/api/alerts/history', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// --- AUTOMATED COMPLIANCE MONITORING & NOTIFICATION ---
+function getCalendarWeekStart() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Start on Monday
+  return new Date(d.setDate(diff));
+}
+
+function getStartOfDay() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+async function updateIndustryTable(userId, setup, email, currentCto, currentReuse, workflowStage) {
+  try {
+    const { data: alerts } = await supabase.from('alert_history').select('*').eq('user_id', userId);
+    const warningCount = alerts ? alerts.length : 1;
+
+    let complianceStatus = 'Compliant';
+    if (warningCount > 0 && warningCount < 3) complianceStatus = 'Warning';
+    if (warningCount >= 3) complianceStatus = 'Critical';
+
+    const industryData = {
+      user_id: userId,
+      industry_name: setup.plantname || 'Unknown',
+      district: setup.location || 'Unknown',
+      email: email || 'N/A',
+      daily_cto_limit: setup.ctolimit || 0,
+      monthly_cto_limit: setup.monthlyctolimit || 0,
+      current_cto_consumption: currentCto,
+      daily_reuse_target: setup.reusetarget || 0,
+      monthly_reuse_target: (setup.reusetarget || 0) * 30,
+      current_reuse_percentage: currentReuse,
+      compliance_status: complianceStatus,
+      warning_count: warningCount,
+      last_warning_date: new Date(),
+      current_workflow_stage: workflowStage
+    };
+
+    const { data: existing } = await supabase.from('industry').select('*').eq('user_id', userId).maybeSingle();
+    if (existing) {
+      await supabase.from('industry').update(industryData).eq('user_id', userId);
+    } else {
+      await supabase.from('industry').insert([industryData]);
+    }
+  } catch (err) {
+    console.error('Error updating industry table:', err);
+  }
+}
+
+async function startComplianceMonitor() {
+  console.log('🤖 Starting Automated Compliance Monitor (Background Service)...');
+  
+  // Run every 5 minutes to ensure timely detection
+  setInterval(async () => {
+    try {
+      const { data: setups, error: setupError } = await supabase.from('setups').select('*');
+      if (setupError || !setups) return;
+
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || "smtp.gmail.com",
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        secure: false,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        }
+      });
+
+      for (const setup of setups) {
+        const userId = setup.user_id;
+        const industryName = setup.plantname || 'Industry';
+        let email = setup.email;
+        if (!email) {
+           const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+           if (authUser && authUser.user) email = authUser.user.email;
+        }
+        if (!email) continue;
+
+        const dailyCtoLimit = setup.ctolimit || 0;
+        const dailyReuseTarget = setup.reusetarget || 0;
+
+        // Fetch the absolute latest sensor data to match frontend's live data
+        const { data: todayData } = await supabase
+          .from('sensor_data')
+          .select('*')
+          .order('timestamp', { ascending: false })
+          .limit(1);
+
+        let currentCtoConsumption = 0;
+        let currentReusePercentage = 0;
+
+        if (todayData && todayData.length > 0) {
+          const lastEntry = todayData[todayData.length - 1];
+          
+          currentCtoConsumption = lastEntry.totalflow || 0;
+          const currentReuseFlow = lastEntry.reuseflow || 0;
+          const currentFlowRate = lastEntry.flowrate || 0;
+          
+          if (currentFlowRate > 0) {
+            currentReusePercentage = (currentReuseFlow / currentFlowRate) * 100;
+          } else if (currentCtoConsumption > 0) {
+             currentReusePercentage = (currentReuseFlow / currentCtoConsumption) * 100;
+          }
+        }
+
+        // --- EMAIL TRIGGER 1: Daily CTO Limit Exceeded ---
+        if (currentCtoConsumption > dailyCtoLimit) {
+          const startOfDay = getStartOfDay().toISOString();
+          const { data: existingAlerts } = await supabase
+            .from('alert_history')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('alerttype', 'Daily CTO Limit Exceeded')
+            .gte('timestamp', startOfDay);
+
+          if (!existingAlerts || existingAlerts.length === 0) {
+            const difference = currentCtoConsumption - dailyCtoLimit;
+            const text = `Dear ${industryName},
+
+The industry's Daily CTO Consumption has exceeded the configured limit.
+Please review today's water usage and prioritize Reused Water to maintain compliance.
+
+• Daily CTO Limit: ${dailyCtoLimit} KL
+• Current CTO Consumption: ${currentCtoConsumption.toFixed(2)} KL
+• Difference: ${difference.toFixed(2)} KL
+• Date & Time: ${new Date().toLocaleString()}
+
+Regards,
+HydroNexa Compliance System`;
+
+            try {
+              await transporter.sendMail({
+                from: `"HydroNexa Compliance System" <${process.env.SMTP_USER}>`,
+                to: email,
+                subject: 'Daily CTO Limit Exceeded',
+                text
+              });
+            } catch (err) {
+              console.error('Failed to send CTO alert email (SMTP error)', err);
+            }
+
+            // Always log the alert history and update the industry table, even if SMTP fails (for demo purposes)
+            try {
+              await supabase.from('alert_history').insert({
+                user_id: userId,
+                industryname: industryName,
+                alerttype: 'Daily CTO Limit Exceeded',
+                message: `Exceeded by ${difference.toFixed(2)} KL`,
+                deliverystatus: 'Delivered',
+                timestamp: new Date()
+              });
+
+              await updateIndustryTable(userId, setup, email, currentCtoConsumption, currentReusePercentage, 'CTO Limit Exceeded');
+            } catch (err) {
+              console.error('Failed to update DB for CTO alert', err);
+            }
+          }
+        }
+
+        // --- EMAIL TRIGGER 2: Weekly Reuse Target NOT Achieved ---
+        const weekStart = getCalendarWeekStart().toISOString();
+        const { data: weekData } = await supabase
+          .from('sensor_data')
+          .select('*')
+          .gte('timestamp', weekStart)
+          .order('timestamp', { ascending: true });
+
+        let missedDays = 0;
+        if (weekData && weekData.length > 0) {
+          const days = {};
+          weekData.forEach(row => {
+            const dateStr = new Date(row.timestamp).toISOString().split('T')[0];
+            if (!days[dateStr]) days[dateStr] = [];
+            days[dateStr].push(row);
+          });
+
+          const todayStr = new Date().toISOString().split('T')[0];
+          for (const [dateStr, rows] of Object.entries(days)) {
+            if (dateStr === todayStr) continue; // Only check fully completed days
+            if (rows.length === 0) continue; 
+            
+            const last = rows[rows.length - 1];
+            const flowRate = last.flowrate || 0;
+            const reuseFlow = last.reuseflow || 0;
+            
+            let pct = 0;
+            if (flowRate > 0) {
+              pct = (reuseFlow / flowRate) * 100;
+            } else if (last.totalflow > 0) {
+              pct = (reuseFlow / last.totalflow) * 100;
+            }
+            
+            if (pct < dailyReuseTarget) {
+              missedDays++;
+            }
+          }
+        }
+
+        if (missedDays >= 2) {
+          const { data: existingReuseAlerts } = await supabase
+            .from('alert_history')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('alerttype', 'Weekly Reuse Target Not Achieved')
+            .gte('timestamp', weekStart);
+
+          if (!existingReuseAlerts || existingReuseAlerts.length === 0) {
+            const text = `Dear ${industryName},
+
+The industry failed to achieve the configured Daily Reuse Target multiple times during this week.
+Please review plant operations and increase Reused Water utilization.
+
+• Daily Reuse Target: ${dailyReuseTarget}%
+• Current Reuse Percentage: ${currentReusePercentage.toFixed(2)}%
+• Number of Missed Days: ${missedDays}
+
+Regards,
+HydroNexa Compliance System`;
+
+            try {
+              await transporter.sendMail({
+                from: `"HydroNexa Compliance System" <${process.env.SMTP_USER}>`,
+                to: email,
+                subject: 'Weekly Reuse Target Not Achieved',
+                text
+              });
+            } catch (err) {
+              console.error('Failed to send Reuse alert email (SMTP error)', err);
+            }
+
+            try {
+              await supabase.from('alert_history').insert({
+                user_id: userId,
+                industryname: industryName,
+                alerttype: 'Weekly Reuse Target Not Achieved',
+                message: `Missed target ${missedDays} times this week`,
+                deliverystatus: 'Delivered',
+                timestamp: new Date()
+              });
+
+              await updateIndustryTable(userId, setup, email, currentCtoConsumption, currentReusePercentage, 'Target Missed');
+            } catch (err) {
+              console.error('Failed to update DB for Reuse alert', err);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Compliance Monitor Error:', error);
+    }
+  }, 10 * 1000); // 10-second polling interval for immediate demo feedback
+}
+
+// Initialize continuous monitoring
+startComplianceMonitor();

@@ -350,6 +350,21 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
       });
       const data = await res.json();
       if (res.ok) {
+        // Save new fields to industry table
+        try {
+          const { error: sbErr } = await supabase
+            .from('industry')
+            .upsert({
+              user_id: s.authUserId,
+              email: s.email,
+              daily_reuse_target: s.dailyReuseTarget || 0,
+              monthly_reuse_target: s.monthlyReuseTarget || 0
+            }, { onConflict: 'user_id' });
+          if (sbErr) console.error("Failed to save targets to industry table:", sbErr);
+        } catch(e) {
+          console.error("Supabase upsert error:", e);
+        }
+
         onClose();
       } else {
         alert(data.error || "Failed to approve");
@@ -366,7 +381,7 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
     { title: "Plant Identity", icon: Factory },
     { title: "Capacity & CTO", icon: Gauge },
     { title: "Operations", icon: Clock },
-    { title: "Alerts & AI", icon: BellRing },
+    { title: "Alerts & Intelligence", icon: BellRing },
   ];
 
   return (
@@ -432,7 +447,7 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
                   <h3 className="text-sm font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-cyan" /> Upload Verified CTO Document</h3>
                   {aiVerified && (
                     <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full text-xs font-bold uppercase tracking-wider">
-                      <CheckCircle2 className="h-4 w-4" /> AI Verified
+                      <CheckCircle2 className="h-4 w-4" /> System Verified
                     </div>
                   )}
                 </div>
@@ -442,7 +457,7 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
                       <Download className="h-4 w-4" /> Upload PDF
                       <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={isVerifying} />
                     </label>
-                    {isVerifying && <span className="text-xs text-cyan animate-pulse">Extracting parameters with AI...</span>}
+                    {isVerifying && <span className="text-xs text-cyan animate-pulse">Extracting parameters with System...</span>}
                   </div>
 
                   {pdfPreviewUrl && (
@@ -492,7 +507,7 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
                   })}
                 </div>
               </div>
-              <Toggle label="AI Monitoring" value={s.aiMonitoring} onChange={(v: any) => setS({...s, aiMonitoring: v})} />
+              <Toggle label="Intelligent Monitoring" value={s.aiMonitoring} onChange={(v: any) => setS({...s, aiMonitoring: v})} />
               <Toggle label="Compliance Alerts" value={s.complianceAlerts} onChange={(v: any) => setS({...s, complianceAlerts: v})} />
               <Toggle label="Sustainability Reports" value={s.sustainabilityReports} onChange={(v: any) => setS({...s, sustainabilityReports: v})} />
             </div>

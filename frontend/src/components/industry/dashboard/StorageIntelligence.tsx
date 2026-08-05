@@ -1,4 +1,5 @@
 import { SensorData } from "@/hooks/useThingSpeak";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine, Legend, Cell, LabelList, ComposedChart, Line } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Activity, Droplets, AlertTriangle, ShieldCheck, 
@@ -6,7 +7,10 @@ import {
   Leaf, BarChart3, PieChart, TrendingUp
 } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
-import { triggerBuzzer } from "./shared";
+import { triggerBuzzer, useAdaptive } from "./shared";
+import { useAppState } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
+
 
 // Custom Hook to drive animated numbers
 function useAnimatedNumber(value: number) {
@@ -17,10 +21,39 @@ function useAnimatedNumber(value: number) {
   return displayVal;
 }
 
-export function StorageIntelligence({ data }: { data: SensorData | null }) {
-  const distance = data?.ultrasonic ?? 15; 
+export function StorageIntelligence({ data, history }: { data: SensorData | null; history?: SensorData[] }) {
+  const a = useAdaptive();
+  // Directly use live distance from ThingSpeak Field 6 (Water Level Distance)
+  const distance = data?.ultrasonic ?? 22; // 22cm defaults to empty before data loads 
   const flowRate = data?.flowRate ?? 0;
   const isMotorOn = flowRate > 0;
+
+  const [showOverflowModal, setShowOverflowModal] = useState(false);
+  const [hasAcknowledgedOverflow, setHasAcknowledgedOverflow] = useState(false);
+
+  useEffect(() => {
+    const isOverflowRange = distance >= 5 && distance <= 7;
+    
+    if (isOverflowRange) {
+      if (!hasAcknowledgedOverflow && !showOverflowModal) {
+        setShowOverflowModal(true);
+      }
+    } else {
+      if (hasAcknowledgedOverflow) setHasAcknowledgedOverflow(false);
+      if (showOverflowModal) setShowOverflowModal(false);
+    }
+  }, [distance, hasAcknowledgedOverflow, showOverflowModal]);
+
+  useEffect(() => {
+    let interval: any;
+    if (showOverflowModal) {
+      triggerBuzzer(); // Initial beep
+      interval = setInterval(() => triggerBuzzer(), 2000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [showOverflowModal]);
 
   // Tank Math (10L capacity, 5cm = Full, 22cm = Empty)
   const rawLiters = Math.max(0, Math.min(10, 10 - ((distance - 5) / 17) * 10));
@@ -29,8 +62,8 @@ export function StorageIntelligence({ data }: { data: SensorData | null }) {
 
   // Determine Storage State
   let status: 'normal' | 'low' | 'overflow_risk' = 'normal';
-  if (distance >= 20) status = 'low';
-  else if (distance <= 7) status = 'overflow_risk';
+  if (distance >= 20 && distance <= 23) status = 'low';
+  else if (distance >= 5 && distance <= 7) status = 'overflow_risk';
 
   const [lastBuzzer, setLastBuzzer] = useState<string | null>(null);
 
@@ -52,7 +85,7 @@ export function StorageIntelligence({ data }: { data: SensorData | null }) {
          </div>
          <div>
             <h1 className="text-2xl font-black uppercase tracking-widest text-white drop-shadow-md">Digital Storage Intelligence</h1>
-            <p className="text-xs text-cyan uppercase font-bold tracking-widest">AI-Powered Fresh Water Management</p>
+            <p className="text-xs text-cyan uppercase font-bold tracking-widest">Intelligent Fresh Water Management</p>
          </div>
       </div>
 
@@ -75,23 +108,53 @@ export function StorageIntelligence({ data }: { data: SensorData | null }) {
            </div>
         </div>
 
-        {/* RIGHT: AI Intelligence & Actions */}
-        <div className="flex flex-col gap-6 justify-center">
-           <AIStoragePrediction status={status} fillPercent={fillPercent} isMotorOn={isMotorOn} />
-           
-           <AnimatePresence mode="popLayout">
-             {status === 'low' && <LowWaterAction key="low" distance={distance} />}
-             {status === 'overflow_risk' && <OverflowAction key="overflow" distance={distance} />}
-           </AnimatePresence>
-
-           {status === 'normal' && (
-             <AIWaterForecast fillPercent={fillPercent} isMotorOn={isMotorOn} />
-           )}
+        {/* RIGHT: AI Storage Prediction Panel */}
+        <div className="flex flex-col justify-center">
+           <AIStorageRecommendation status={status} isMotorOn={isMotorOn} liters={liters} data={data} />
         </div>
 
       </div>
 
-      <SustainabilityCompliance />
+      <WeeklyWaterReuseVsFreshWaterAnalysis data={data} />
+      
+      {/* Overflow Modal Alert */}
+      {showOverflowModal && (
+        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-lg">
+          <motion.div 
+            initial={{ y: -50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="bg-black/95 border-2 border-danger rounded-[2rem] p-8 shadow-[0_20px_60px_rgba(255,0,0,0.4)] flex flex-col items-center text-center relative overflow-hidden backdrop-blur-xl"
+          >
+            <div className="absolute inset-0 bg-danger/10 animate-pulse pointer-events-none" />
+            
+            <h2 className="text-xl font-display font-black text-danger mb-6 uppercase tracking-widest relative z-10 flex items-center gap-2">
+              <span className="text-2xl animate-bounce">🚨</span> Storage Tank Overflow Warning
+            </h2>
+            
+            <div className="w-full bg-danger/10 border border-danger/30 rounded-xl p-4 mb-4 relative z-10 text-left">
+              <div className="text-[10px] text-danger uppercase tracking-widest font-black mb-1">Tank:</div>
+              <div className="text-white font-bold">Freshwater Storage Tank</div>
+            </div>
+
+            <div className="w-full bg-black/50 border border-white/10 rounded-xl p-4 mb-8 relative z-10 text-left">
+              <div className="text-[10px] text-white/50 uppercase tracking-widest font-black mb-1">Message:</div>
+              <div className="text-white/90 font-medium leading-relaxed">
+                "⚠️ Freshwater Storage Tank is approaching overflow. Please switch <span className="font-black text-danger underline">OFF</span> the Fresh Water Pump immediately."
+              </div>
+            </div>
+            
+            <button
+              onClick={() => {
+                setShowOverflowModal(false);
+                setHasAcknowledgedOverflow(true);
+              }}
+              className="bg-danger hover:bg-danger/80 text-white font-black uppercase tracking-widest px-12 py-4 rounded-xl transition-all shadow-[0_0_20px_rgba(255,0,0,0.4)] hover:scale-105 active:scale-95 relative z-10 flex items-center gap-2"
+            >
+              <span>✅</span> OK
+            </button>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
@@ -229,112 +292,95 @@ function Bubbles({ count, color, speed }: { count: number, color: string, speed:
 // AI MODULES & ACTIONS
 // --------------------------------------------------------
 
-function AIStoragePrediction({ status, fillPercent, isMotorOn }: any) {
-  let title = "Tank Stable";
-  let color = "eco";
+function AIStorageRecommendation({ status, isMotorOn, liters, data }: any) {
+  let riskLevel = "Low";
+  let riskColor = "bg-eco/20 text-eco border-eco/30";
+  let aiRec = "Tank level is healthy. Continue normal operation.";
+  let suggestedAction = "Continue normal operations.";
   
-  if (status === 'overflow_risk') { title = "Overflow Imminent"; color = "danger"; }
-  else if (status === 'low') { title = "Low Water Expected"; color = "warn"; }
-  else if (isMotorOn) { title = "Tank Filling Normally"; color = "cyan"; }
+  if (liters <= 0) {
+    riskLevel = "Critical";
+    riskColor = "bg-danger/20 text-danger border-danger/30";
+    aiRec = "Storage tank is empty. Please switch ON the Fresh Water Pump.";
+    suggestedAction = "Switch ON Fresh Water Pump immediately.";
+  } else if (status === 'low') {
+    riskLevel = "Medium";
+    riskColor = "bg-warn/20 text-warn border-warn/30";
+    aiRec = "Water level is low. Refill is recommended soon.";
+    suggestedAction = "Prepare to switch ON Fresh Water Pump.";
+  } else if (status === 'overflow_risk') {
+    riskLevel = "High";
+    riskColor = "bg-danger/20 text-danger border-danger/30";
+    aiRec = "Tank is approaching full capacity. Please switch OFF the Fresh Water Pump immediately.";
+    suggestedAction = "Switch OFF Fresh Water Pump immediately.";
+  }
+
+  const flowRate = data?.flowRate ?? 0;
+  let predictionText = "Motor is OFF. Water consumption has stopped.";
+  
+  if (flowRate > 0 && liters > 0) {
+     const totalMinutes = liters / flowRate;
+     const hours = Math.floor(totalMinutes / 60);
+     const mins = Math.floor(totalMinutes % 60);
+     
+     if (hours > 0) {
+        predictionText = `Approximately ${hours} Hours ${mins} Minutes Remaining`;
+     } else {
+        predictionText = `Approximately ${mins} Minutes Remaining`;
+     }
+  } else if (flowRate > 0 && liters <= 0) {
+     predictionText = "Tank empty. No water available.";
+  }
 
   return (
-    <div className="glass-strong border border-glass-border rounded-3xl p-6 shadow-xl relative overflow-hidden group">
-      <div className={`absolute top-0 right-0 w-24 h-24 bg-${color}/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2`} />
-      <div className="flex items-center gap-2 mb-4">
-         <Brain className="h-4 w-4 text-cyan" />
-         <span className="text-[9px] uppercase tracking-widest font-black text-cyan">AI Assessment</span>
+    <div className="glass-strong border border-white/10 rounded-[2rem] p-6 shadow-2xl flex flex-col gap-5 relative overflow-hidden">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-cyan/10 blur-3xl rounded-full" />
+      
+      <div className="flex items-center gap-3 border-b border-white/5 pb-4 relative z-10">
+         <div className="h-10 w-10 rounded-xl bg-cyan/10 border border-cyan/20 flex items-center justify-center">
+            <Brain className="h-5 w-5 text-cyan" />
+         </div>
+         <h2 className="text-lg font-black uppercase tracking-widest text-white">Smart Storage Recommendation</h2>
       </div>
-      <div className="flex items-start gap-4 relative z-10">
-         <div className={`h-12 w-12 rounded-full border-2 border-${color}/50 bg-${color}/10 flex items-center justify-center shrink-0 shadow-[0_0_15px_color-mix(in_oklab,var(--${color})_40%,transparent)]`}>
-            <Activity className={`h-5 w-5 text-${color} animate-pulse`} style={{ color: `var(--${color})` }} />
-         </div>
-         <div className="text-xl font-black uppercase tracking-tight text-white/90 leading-tight">
-            {title}
-         </div>
-      </div>
-    </div>
-  )
-}
 
-function LowWaterAction({ distance }: any) {
-  // AI Time Estimation (mocked dynamically based on distance)
-  const timeRemaining = Math.max(1, Math.round((22 - distance) * 8));
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-      className="glass-strong border-2 border-warn/50 rounded-3xl p-6 shadow-[0_10px_40px_rgba(255,180,50,0.2)] relative overflow-hidden bg-warn/5"
-    >
-      <div className="absolute inset-0 bg-warn/10 animate-pulse opacity-50" />
-      <div className="flex items-center gap-3 mb-6 relative z-10">
-         <div className="h-10 w-10 rounded-full bg-warn flex items-center justify-center shadow-[0_0_20px_var(--warn)] animate-pulse">
-            <BellRing className="h-5 w-5 text-black animate-bounce" />
-         </div>
-         <div>
-            <span className="text-xs uppercase tracking-widest font-black text-warn">Low Water Alert</span>
-            <div className="text-lg font-black text-white">Tank Running Empty</div>
-         </div>
-      </div>
-      <div className="bg-black/60 border border-warn/30 rounded-2xl p-5 relative z-10 text-center">
-         <p className="text-xs text-white/60 uppercase tracking-widest font-bold mb-1">Time until critical empty</p>
-         <div className="text-4xl font-display font-black text-warn drop-shadow-md mb-4">{timeRemaining} <span className="text-lg">minutes</span></div>
-         <div className="flex items-start gap-2 bg-warn/10 p-3 rounded-xl border border-warn/20 text-left">
-            <Brain className="h-4 w-4 text-warn shrink-0 mt-0.5" />
-            <p className="text-xs text-warn font-medium leading-relaxed">AI Recommendation: Water supply motor should be turned <span className="font-black underline">ON</span> immediately to prevent complete depletion.</p>
-         </div>
-      </div>
-    </motion.div>
-  )
-}
-
-function OverflowAction({ distance }: any) {
-  // AI Time Estimation (mocked dynamically based on distance to overflow)
-  const timeToOverflow = Math.max(1, Math.round((distance - 4) * 5));
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-      className="glass-strong border-2 border-danger/50 rounded-3xl p-6 shadow-[0_10px_40px_rgba(255,0,0,0.2)] relative overflow-hidden bg-danger/5"
-    >
-      <div className="absolute inset-0 bg-danger/10 animate-pulse" />
-      <div className="flex items-center justify-between mb-6 relative z-10">
-         <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-danger flex items-center justify-center shadow-[0_0_20px_var(--danger)] animate-pulse">
-               <AlertTriangle className="h-5 w-5 text-white" />
+      <div className="grid gap-4 relative z-10">
+         <div className="flex flex-col gap-2 bg-black/40 border border-white/5 rounded-xl p-4">
+            <div className="text-[10px] uppercase tracking-widest font-black text-white/50 flex items-center gap-2">
+               Smart Recommendation
             </div>
-            <div>
-               <span className="text-xs uppercase tracking-widest font-black text-danger">Overflow Warning</span>
-               <div className="text-lg font-black text-white">Tank About To Overflow</div>
+            <div className="text-sm font-bold text-white/90 leading-snug">
+               {aiRec}
             </div>
          </div>
-      </div>
-      <div className="bg-black/60 border border-danger/30 rounded-2xl p-5 relative z-10 text-center">
-         <p className="text-xs text-white/60 uppercase tracking-widest font-bold mb-1">Estimated time until overflow</p>
-         <div className="text-4xl font-display font-black text-danger drop-shadow-md mb-4">{timeToOverflow} <span className="text-lg">minutes</span></div>
-         <div className="flex items-start gap-2 bg-danger/10 p-3 rounded-xl border border-danger/20 text-left">
-            <Brain className="h-4 w-4 text-danger shrink-0 mt-0.5" />
-            <p className="text-xs text-danger font-medium leading-relaxed">AI Recommendation: Water supply motor should be turned <span className="font-black underline">OFF</span> immediately based on current consumption rate.</p>
+
+         <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2 bg-black/40 border border-white/5 rounded-xl p-4">
+               <div className="text-[10px] uppercase tracking-widest font-black text-white/50 flex items-center gap-2">
+                  ⚠ Risk Level
+               </div>
+               <div className={`text-xs font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border inline-flex items-center justify-center ${riskColor}`}>
+                  {riskLevel}
+               </div>
+            </div>
+
+            <div className="flex flex-col gap-2 bg-black/40 border border-white/5 rounded-xl p-4">
+               <div className="text-[10px] uppercase tracking-widest font-black text-white/50 flex items-center gap-2">
+                  ⏳ Remaining Water Availability
+               </div>
+               <div className="text-sm font-bold text-cyan">
+                  {predictionText}
+               </div>
+            </div>
          </div>
-      </div>
-    </motion.div>
-  )
-}
 
-function AIWaterForecast({ fillPercent, isMotorOn }: any) {
-  let msg = "Current storage is sufficient for another 55 minutes. Motor can safely remain OFF.";
-  if (isMotorOn) msg = "Tank will reach full capacity in approximately 18 minutes.";
-  if (fillPercent < 20) msg = "Water will become empty in approximately 42 minutes.";
-
-  return (
-    <div className="glass-strong border border-glass-border rounded-3xl p-6 shadow-xl hover:border-cyan/30 transition-colors group">
-       <div className="flex items-center gap-2 mb-4">
-         <Brain className="h-4 w-4 text-cyan" />
-         <span className="text-[9px] uppercase tracking-widest font-black text-cyan">AI Forecast</span>
-      </div>
-      <p className="text-sm text-white/90 font-medium leading-relaxed mb-6">{msg}</p>
-      <div className="flex items-center justify-between bg-black/40 border border-white/10 rounded-xl p-3">
-         <span className="text-[10px] uppercase tracking-widest text-white/50 font-bold">Prediction Confidence</span>
-         <span className="text-sm font-black text-eco flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> 96%</span>
+         <div className="flex flex-col gap-2 bg-cyan/10 border border-cyan/20 rounded-xl p-4 mt-2">
+            <div className="text-[10px] uppercase tracking-widest font-black text-cyan flex items-center gap-2">
+               Suggested Action
+            </div>
+            <div className="text-sm font-bold text-white/90">
+               {suggestedAction}
+            </div>
+         </div>
       </div>
     </div>
   )
@@ -350,249 +396,627 @@ function AIWaterForecast({ fillPercent, isMotorOn }: any) {
 // SUSTAINABILITY & COMPLIANCE
 // --------------------------------------------------------
 
-function SustainabilityCompliance() {
-  // Mock Data
-  const dailyFresh = 420; // Liters
-  const dailyReused = 650;
-  const ctoLimit = 500;
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    const fresh = payload.find((p: any) => p.dataKey === 'fresh')?.value || 0;
+    const reused = payload.find((p: any) => p.dataKey === 'reused')?.value || 0;
+    const cto = payload.find((p: any) => p.dataKey === 'cto')?.value || 0;
+    const total = fresh + reused;
+    const freshPct = total > 0 ? ((fresh / total) * 100).toFixed(0) : 0;
+    const reusePct = total > 0 ? ((reused / total) * 100).toFixed(0) : 0;
+    const ctoUtil = cto > 0 ? ((total / cto) * 100).toFixed(0) : 0;
+    const isExceeded = total > cto;
+
+    return (
+      <div className="bg-black/90 border border-white/10 rounded-xl p-4 shadow-2xl min-w-[200px] backdrop-blur-xl">
+         <div className="text-white/50 text-[10px] uppercase font-black tracking-widest mb-3 border-b border-white/10 pb-2">{label}</div>
+         <div className="grid gap-2 mb-3 border-b border-white/10 pb-3">
+            <div className="flex justify-between items-center text-xs">
+               <span className="text-cyan font-bold uppercase tracking-widest mr-4">Fresh Water</span>
+               <span className="text-white font-black">{fresh.toFixed(2)} L <span className="text-white/40 text-[10px] font-bold">({freshPct}%)</span></span>
+            </div>
+            <div className="flex justify-between items-center text-xs">
+               <span className="text-eco font-bold uppercase tracking-widest mr-4">Reuse Water</span>
+               <span className="text-white font-black">{reused.toFixed(2)} L <span className="text-white/40 text-[10px] font-bold">({reusePct}%)</span></span>
+            </div>
+            <div className="flex justify-between items-center text-xs mt-1 pt-1 border-t border-white/5">
+               <span className="text-white/70 font-bold uppercase tracking-widest mr-4">Total Consumption</span>
+               <span className="text-white font-black">{total.toFixed(2)} L</span>
+            </div>
+         </div>
+         <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest">
+            <div className="flex justify-between text-white/50">
+               <span>CTO Limit</span>
+               <span className="text-white">{cto.toFixed(0)} L</span>
+            </div>
+            <div className="flex justify-between text-white/50">
+               <span>CTO Utilization</span>
+               <span className="text-white">{ctoUtil}%</span>
+            </div>
+            <div className="flex justify-between items-center mt-2">
+               <span className="text-white/50">Status</span>
+               {isExceeded ? (
+                 <span className="text-danger flex items-center gap-1">🔴 Exceeded</span>
+               ) : (
+                 <span className="text-eco flex items-center gap-1">🟢 Within Limit</span>
+               )}
+            </div>
+         </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+function WeeklyWaterReuseVsFreshWaterAnalysis({ data }: any) {
+  const a = useAdaptive();
+  const { state, updateSetup } = useAppState();
+  const userEmail = state.currentUserEmail || state.setup?.email;
+  const ctoLimit = 15; // Set strictly to 15L as requested
   
-  const ctoPercent = Math.min(100, (dailyFresh / ctoLimit) * 100);
+  const [completedDaysCount, setCompletedDaysCount] = useState(() => {
+    return parseInt(localStorage.getItem('completedDaysCount_v8') || '6');
+  });
+
+  const [todayLiveFresh, setTodayLiveFresh] = useState(() => parseFloat(localStorage.getItem("todayLiveFresh_v8") || "0"));
+  const [todayLiveReused, setTodayLiveReused] = useState(() => parseFloat(localStorage.getItem("todayLiveReused_v8") || "0"));
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTodayLiveFresh(prev => {
+        if (data?.flowRate && data.flowRate > 0) {
+          const newVal = prev + (data.flowRate / 60);
+          localStorage.setItem("todayLiveFresh_v8", newVal.toString());
+          return newVal;
+        }
+        return prev;
+      });
+      setTodayLiveReused(prev => {
+        if (data?.reuseFlow && data.reuseFlow > 0) {
+          const newVal = prev + (data.reuseFlow / 60);
+          localStorage.setItem("todayLiveReused_v8", newVal.toString());
+          return newVal;
+        }
+        return prev;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [data?.flowRate, data?.reuseFlow]);
+
+  const [weeklyHistory, setWeeklyHistory] = useState<any[]>(() => {
+    const stored = localStorage.getItem('waterWeeklyHistory_mock_v9');
+    if (stored) return JSON.parse(stored);
+    
+    // Preload with 6 realistic days for demo
+    const cleanData = [
+      { name: "Day 1", fresh: 8, reused: 4.2 },
+      { name: "Day 2", fresh: 9.8, reused: 5.0 },
+      { name: "Day 3", fresh: 11.2, reused: 4.8 },
+      { name: "Day 4", fresh: 10.7, reused: 5.3 },
+      { name: "Day 5", fresh: 9.5, reused: 4.6 },
+      { name: "Day 6", fresh: 10.9, reused: 5.1 },
+      { name: "Day 7", fresh: 0, reused: 0 }
+    ];
+    
+    localStorage.setItem('waterWeeklyHistory_mock_v9', JSON.stringify(cleanData));
+    localStorage.setItem('completedDaysCount_v8', '6');
+    return cleanData;
+  });
+
+  const [lastWeekStrategy, setLastWeekStrategy] = useState<any>(() => {
+     const stored = localStorage.getItem('waterNextWeekStrategy_mock_v8');
+     return stored ? JSON.parse(stored) : null;
+  });
   
-  // AI Status Logic
-  let zone: 'safe' | 'warning' | 'critical' = 'safe';
-  if (dailyFresh >= ctoLimit) zone = 'critical';
-  else if (dailyFresh >= ctoLimit * 0.85) zone = 'warning';
-  
-  // Scoring
-  const baseScore = 100;
-  const reuseRatio = dailyReused / (dailyFresh + dailyReused);
-  const reuseScore = reuseRatio * 50; 
-  const complianceScore = Math.max(0, 50 - (ctoPercent / 100) * 50);
-  const totalScore = Math.min(100, Math.round(reuseScore + complianceScore + 10)); 
-  
-  let grade = 'A+';
-  if (totalScore < 90) grade = 'A';
-  if (totalScore < 80) grade = 'B';
-  if (totalScore < 70) grade = 'C';
-  if (totalScore < 50) grade = 'D';
+  const [hasSentStrategyAlert, setHasSentStrategyAlert] = useState(() => {
+     return localStorage.getItem('waterNextWeekAlertSent_mock_v8') === 'true';
+  });
 
-  return (
-    <div className="mt-16 max-w-6xl mx-auto space-y-8">
-       {/* Section Header */}
-       <div className="flex items-center gap-3 mb-8">
-          <div className="h-10 w-10 rounded-xl bg-eco/10 border border-eco/20 flex items-center justify-center shadow-[0_0_15px_rgba(0,255,0,0.15)]">
-             <Leaf className="h-5 w-5 text-eco" />
-          </div>
-          <div>
-             <h2 className="text-xl font-black uppercase tracking-widest text-white drop-shadow-md">Fresh Water Compliance & Sustainability</h2>
-             <p className="text-[10px] text-eco uppercase font-bold tracking-widest">AI-Powered Enterprise Intelligence</p>
-          </div>
-       </div>
+  useEffect(() => {
+     const handleSync = () => {
+       setCompletedDaysCount(parseInt(localStorage.getItem('completedDaysCount_v8') || '6'));
+       setWeeklyHistory(JSON.parse(localStorage.getItem('waterWeeklyHistory_mock_v9') || '[]'));
+       setTodayLiveFresh(parseFloat(localStorage.getItem("todayLiveFresh_v8") || "0"));
+       setTodayLiveReused(parseFloat(localStorage.getItem("todayLiveReused_v8") || "0"));
+     };
+     
+     window.addEventListener('sync-storage-intelligence', handleSync);
+     return () => window.removeEventListener('sync-storage-intelligence', handleSync);
+  }, []);
 
-       {/* Grid Layout */}
-       <div className="grid lg:grid-cols-12 gap-8">
-         
-         {/* LEFT COLUMN: Analytics & CTO (8 cols) */}
-         <div className="lg:col-span-8 space-y-8">
-            <FreshWaterAnalytics daily={dailyFresh} />
-            <div className="grid md:grid-cols-2 gap-8">
-              <CTOCompliance percent={ctoPercent} used={dailyFresh} limit={ctoLimit} zone={zone} />
-              <WaterComparison fresh={dailyFresh} reused={dailyReused} />
-            </div>
-         </div>
+  const handleSimulateNextDay = () => {
+    if (completedDaysCount >= 7) return;
+    
+    let newHistory = [...weeklyHistory];
+    
+    newHistory[completedDaysCount] = {
+      ...newHistory[completedDaysCount],
+      fresh: todayLiveFresh,
+      reused: todayLiveReused
+    };
 
-         {/* RIGHT COLUMN: AI Scoring & Status (4 cols) */}
-         <div className="lg:col-span-4 space-y-8">
-            <SustainabilityScore score={totalScore} grade={grade} />
-            <AIComplianceStatus zone={zone} />
-         </div>
+    setWeeklyHistory(newHistory);
+    localStorage.setItem('waterWeeklyHistory_mock_v9', JSON.stringify(newHistory));
 
-       </div>
-    </div>
-  )
-}
+    const nextCount = completedDaysCount + 1;
+    setCompletedDaysCount(nextCount);
+    localStorage.setItem('completedDaysCount_v8', nextCount.toString());
 
-function FreshWaterAnalytics({ daily }: any) {
-  return (
-    <div className="glass-strong border border-glass-border rounded-3xl p-6 shadow-xl">
-       <div className="flex items-center gap-2 mb-6">
-         <BarChart3 className="h-4 w-4 text-cyan" />
-         <span className="text-[9px] uppercase tracking-widest font-black text-white/70">Fresh Water Consumption Analytics</span>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-         <AnalyticsCard label="Daily" value={`${daily} L`} active />
-         <AnalyticsCard label="Weekly" value={`${daily * 7} L`} />
-         <AnalyticsCard label="Monthly" value={`${daily * 30} L`} />
-         <AnalyticsCard label="Yearly" value={`${daily * 365} L`} />
-      </div>
-    </div>
-  )
-}
+    const liveFlowRate = parseFloat(localStorage.getItem('liveFlowRate') || '0');
+    const liveReuseRate = parseFloat(localStorage.getItem('liveReuseRate') || '0');
+    const newOffsetFlow = (data?.flowRate && data.flowRate > 0) ? data.flowRate : liveFlowRate;
+    const newOffsetReuse = (data?.reuseFlow && data.reuseFlow > 0) ? data.reuseFlow : liveReuseRate;
+    
+    // Set for other components globally
+    localStorage.setItem("dailyOffsetFlow", newOffsetFlow.toString());
+    localStorage.setItem("dailyOffsetReuse", newOffsetReuse.toString());
 
-function AnalyticsCard({ label, value, active }: any) {
-  return (
-    <div className={`p-4 rounded-2xl border transition-all flex flex-col items-center justify-center gap-2 ${active ? 'bg-cyan/10 border-cyan/30 shadow-[0_0_15px_rgba(0,255,255,0.1)]' : 'bg-black/30 border-white/5'}`}>
-       <span className={`text-[10px] font-bold uppercase tracking-widest ${active ? 'text-cyan' : 'text-white/60'}`}>{label}</span>
-       <span className="text-2xl font-black font-display text-white">{value}</span>
-    </div>
-  )
-}
+    // Reset local accumulators
+    setTodayLiveFresh(0);
+    localStorage.setItem("todayLiveFresh_v8", "0");
+    setTodayLiveReused(0);
+    localStorage.setItem("todayLiveReused_v8", "0");
+    
+    // Explicitly reset daily accumulation counters so they remain 0
+    localStorage.setItem("liveCtoUsed", "0");
+    localStorage.setItem("shiftOffset", "0");
+    localStorage.setItem("morningUsage", "0");
+    localStorage.setItem("afternoonUsage", "0");
+    localStorage.setItem("nightUsage", "0");
+    localStorage.setItem("emailSent", "false");
 
-function CTOCompliance({ percent, used, limit, zone }: any) {
-  const color = zone === 'safe' ? 'var(--eco)' : zone === 'warning' ? 'var(--warn)' : 'var(--danger)';
-  
-  return (
-    <div className="glass-strong border border-glass-border rounded-3xl p-6 shadow-xl flex flex-col">
-       <div className="flex items-center gap-2 mb-6">
-         <Target className="h-4 w-4 text-cyan" />
-         <span className="text-[9px] uppercase tracking-widest font-black text-white/70">CTO Compliance Comparison</span>
-      </div>
-      <div className="flex-1 flex flex-col justify-center items-center gap-4">
-         <div className="relative h-32 w-32 flex items-center justify-center">
-            <svg className="absolute inset-0 w-full h-full -rotate-90 transform">
-               <circle cx="64" cy="64" r="56" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="12" strokeLinecap="round" />
-               <motion.circle 
-                 cx="64" cy="64" r="56" fill="none" stroke={color} strokeWidth="12" strokeLinecap="round"
-                 strokeDasharray="351.8"
-                 initial={{ strokeDashoffset: 351.8 }}
-                 animate={{ strokeDashoffset: 351.8 - (351.8 * percent) / 100 }}
-                 transition={{ duration: 1.5, ease: "easeOut" }}
-                 style={{ filter: `drop-shadow(0 0 8px ${color})` }}
-               />
-            </svg>
-            <div className="flex flex-col items-center">
-               <span className="text-2xl font-black text-white">{Math.round(percent)}%</span>
-               <span className="text-[9px] font-bold uppercase text-white/50">Utilized</span>
-            </div>
-         </div>
-         <div className="flex w-full justify-between items-center bg-black/40 rounded-xl p-3 border border-white/5">
-            <div className="flex flex-col">
-               <span className="text-[9px] uppercase text-white/50 font-bold">Consumed</span>
-               <span className="text-sm font-black text-white">{used} L</span>
-            </div>
-            <div className="h-6 w-[1px] bg-white/10"></div>
-            <div className="flex flex-col text-right">
-               <span className="text-[9px] uppercase text-white/50 font-bold">CTO Limit</span>
-               <span className="text-sm font-black text-white">{limit} L</span>
-            </div>
-         </div>
-      </div>
-    </div>
-  )
-}
-
-function WaterComparison({ fresh, reused }: any) {
-  const total = fresh + reused;
-  const freshPercent = (fresh / total) * 100;
-  const reusedPercent = (reused / total) * 100;
-
-  return (
-    <div className="glass-strong border border-glass-border rounded-3xl p-6 shadow-xl flex flex-col">
-       <div className="flex items-center gap-2 mb-6">
-         <PieChart className="h-4 w-4 text-cyan" />
-         <span className="text-[9px] uppercase tracking-widest font-black text-white/70">Fresh vs Reused</span>
-      </div>
-      <div className="flex-1 flex flex-col justify-center gap-6">
-         <div className="flex justify-between items-end">
-            <div className="flex flex-col gap-1">
-               <span className="text-[10px] uppercase font-black tracking-widest text-cyan">Fresh Water</span>
-               <span className="text-2xl font-black text-white">{Math.round(freshPercent)}%</span>
-            </div>
-            <div className="flex flex-col gap-1 text-right">
-               <span className="text-[10px] uppercase font-black tracking-widest text-eco">Reused Water</span>
-               <span className="text-2xl font-black text-white">{Math.round(reusedPercent)}%</span>
-            </div>
-         </div>
-         
-         <div className="h-6 w-full rounded-full overflow-hidden flex bg-black/50 border border-white/10 relative">
-            <motion.div 
-              initial={{ width: 0 }} 
-              animate={{ width: `${freshPercent}%` }} 
-              transition={{ duration: 1.5, ease: "easeOut" }}
-              className="h-full bg-cyan relative z-10"
-              style={{ boxShadow: '0 0 15px rgba(0,255,255,0.4)' }}
-            />
-            <motion.div 
-              initial={{ width: 0 }} 
-              animate={{ width: `${reusedPercent}%` }} 
-              transition={{ duration: 1.5, ease: "easeOut" }}
-              className="h-full bg-eco relative z-10"
-              style={{ boxShadow: '0 0 15px rgba(0,255,0,0.4)' }}
-            />
-         </div>
-         
-         <div className="text-[9px] text-white/50 font-bold uppercase tracking-widest text-center">
-            Reused water utilization is dominant, indicating highly sustainable operations.
-         </div>
-      </div>
-    </div>
-  )
-}
-
-function SustainabilityScore({ score, grade }: any) {
-  return (
-    <div className="glass-strong border border-eco/30 bg-eco/5 rounded-3xl p-6 shadow-[0_10px_30px_rgba(0,255,0,0.1)] relative overflow-hidden">
-       <div className="absolute top-0 right-0 w-32 h-32 bg-eco/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-       
-       <div className="flex items-center gap-2 mb-4 relative z-10">
-         <TrendingUp className="h-4 w-4 text-eco" />
-         <span className="text-[9px] uppercase tracking-widest font-black text-eco">AI Sustainability Score</span>
-      </div>
+    if (nextCount === 7) {
+      // Week Finished!
+      const completedFresh = newHistory.reduce((acc, d) => acc + d.fresh, 0);
+      const completedReused = newHistory.reduce((acc, d) => acc + d.reused, 0);
+      const total = completedFresh + completedReused;
+      const freshPct = total > 0 ? (completedFresh / total) * 100 : 0;
+      const reusedPct = total > 0 ? (completedReused / total) * 100 : 0;
       
-      <div className="flex items-end justify-between relative z-10">
-         <div className="flex flex-col">
-            <span className="text-6xl font-display font-black text-white drop-shadow-lg leading-none">{score}</span>
-            <span className="text-[10px] uppercase font-bold text-white/60 tracking-widest mt-2">Out of 100</span>
-         </div>
-         <div className="h-16 w-16 rounded-2xl bg-eco text-black flex items-center justify-center text-3xl font-black shadow-[0_0_20px_var(--eco)]">
-            {grade}
-         </div>
-      </div>
-    </div>
-  )
-}
+      let targetFreshPct = freshPct;
+      let targetReusedPct = reusedPct;
+      
+      if (completedFresh > completedReused) {
+         targetFreshPct = Math.max(20, freshPct - 30);
+         targetReusedPct = 100 - targetFreshPct;
+      } else {
+         targetFreshPct = Math.max(10, freshPct - 10);
+         targetReusedPct = 100 - targetFreshPct;
+      }
+      
+      const expectedSaving = (total * freshPct / 100) - (total * targetFreshPct / 100);
+      const expectedCtoImp = (expectedSaving / (a.ctoLimit * 7)) * 100;
+      
+      const newStrategy = {
+         lastWeekFreshPct: freshPct,
+         lastWeekReusedPct: reusedPct,
+         targetFreshPct,
+         targetReusedPct,
+         expectedSaving: expectedSaving > 0 ? expectedSaving : 0,
+         expectedCtoImp: expectedCtoImp > 0 ? expectedCtoImp : 0,
+         targetFreshLiters: (a.ctoLimit * 7) * (targetFreshPct / 100)
+      };
+      
+      setLastWeekStrategy(newStrategy);
+      localStorage.setItem('waterNextWeekStrategy_mock_v8', JSON.stringify(newStrategy));
+      setHasSentStrategyAlert(false);
+      localStorage.setItem('waterNextWeekAlertSent_mock_v8', 'false');
+    }
+    
+    // Sync globally so that Daily CTO Consumption drops to 0 instantly
+    window.dispatchEvent(new Event('sync-storage-intelligence'));
+  };
 
-function AIComplianceStatus({ zone }: any) {
-  let title = "Safe Zone";
-  let color = "eco";
-  let message = "Fresh water consumption is within the CTO-approved limit, while reused water utilization is significantly higher than fresh water consumption. The industry is operating sustainably and maintaining regulatory compliance.";
-  let recommendation = "Current water usage is sustainable; maintain the existing operating strategy.";
+  const handleSimulateNextWeek = () => {
+    const cleanData = [
+      { name: "Day 1", fresh: 8, reused: 4.2 },
+      { name: "Day 2", fresh: 9.8, reused: 5.0 },
+      { name: "Day 3", fresh: 11.2, reused: 4.8 },
+      { name: "Day 4", fresh: 10.7, reused: 5.3 },
+      { name: "Day 5", fresh: 9.5, reused: 4.6 },
+      { name: "Day 6", fresh: 10.9, reused: 5.1 },
+      { name: "Day 7", fresh: 0, reused: 0 }
+    ];
+    
+    setWeeklyHistory(cleanData);
+    localStorage.setItem('waterWeeklyHistory_mock_v9', JSON.stringify(cleanData));
+    
+    setCompletedDaysCount(6);
+    localStorage.setItem('completedDaysCount_v8', '6');
 
-  if (zone === 'warning') {
-    title = "Warning Zone";
-    color = "warn";
-    message = "Fresh water consumption is approaching the CTO limit. Reused water utilization is sub-optimal and needs improvement.";
-    recommendation = "Optimize reuse to avoid compliance issues. Increase reused water utilization to reduce fresh water dependency.";
-  } else if (zone === 'critical') {
-    title = "Critical Zone";
-    color = "danger";
-    message = "Fresh water consumption has exceeded the CTO-approved limit. Immediate action is required to restore compliance.";
-    recommendation = "Halt non-essential fresh water intake. Maximize reused water distribution immediately.";
+    setLastWeekStrategy(null);
+    localStorage.removeItem('waterNextWeekStrategy_mock_v8');
+
+    const liveFlowRate = parseFloat(localStorage.getItem('liveFlowRate') || '0');
+    const liveReuseRate = parseFloat(localStorage.getItem('liveReuseRate') || '0');
+    const newOffsetFlow = (data?.flowRate && data.flowRate > 0) ? data.flowRate : liveFlowRate;
+    const newOffsetReuse = (data?.reuseFlow && data.reuseFlow > 0) ? data.reuseFlow : liveReuseRate;
+    
+    // Set for other components globally
+    localStorage.setItem("dailyOffsetFlow", newOffsetFlow.toString());
+    localStorage.setItem("dailyOffsetReuse", newOffsetReuse.toString());
+
+    // Reset local accumulators
+    setTodayLiveFresh(0);
+    localStorage.setItem("todayLiveFresh_v8", "0");
+    setTodayLiveReused(0);
+    localStorage.setItem("todayLiveReused_v8", "0");
+    
+    // Explicitly reset daily accumulation counters so they remain 0
+    localStorage.setItem("liveCtoUsed", "0");
+    localStorage.setItem("shiftOffset", "0");
+    localStorage.setItem("morningUsage", "0");
+    localStorage.setItem("afternoonUsage", "0");
+    localStorage.setItem("nightUsage", "0");
+    localStorage.setItem("emailSent", "false");
+    
+    // Sync globally so that Daily CTO Consumption drops to 0 instantly
+    window.dispatchEvent(new Event('sync-storage-intelligence'));
+  };
+
+  const handleApplyStrategy = async (strategy: any) => {
+     if (!strategy) return;
+     const newDailyTarget = Math.max(5, Math.round((a.ctoLimit * 7) * (strategy.targetReusedPct / 100) / 7));
+     const newMonthlyTarget = newDailyTarget * 30;
+     
+     // Update global state
+     updateSetup({ dailyReuseTarget: newDailyTarget, monthlyReuseTarget: newMonthlyTarget });
+     
+     // Update Supabase
+     if (userEmail) {
+       try {
+         await supabase
+           .from('industry')
+           .update({ 
+             daily_reuse_target: newDailyTarget, 
+             monthly_reuse_target: newMonthlyTarget 
+           })
+           .eq('email', userEmail);
+       } catch (err) {
+         console.error("Failed to update Supabase targets", err);
+       }
+     }
+     
+     alert(`Next Week Strategy Applied!\nDaily Reuse Target is now ${newDailyTarget}L.`);
+  };
+
+  useEffect(() => {
+     if (lastWeekStrategy && !hasSentStrategyAlert && userEmail) {
+        const currentFreshTotal = weeklyHistory.reduce((acc, curr) => acc + curr.fresh, 0);
+        
+        if (currentFreshTotal > lastWeekStrategy.targetFreshLiters && currentFreshTotal > 5) {
+           setHasSentStrategyAlert(true);
+           localStorage.setItem('waterNextWeekAlertSent_mock', 'true');
+           
+           fetch('http://localhost:5000/api/email/send-alert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                 to: userEmail,
+                 industryName: state.setup?.plantName,
+                 subject: "Fresh Water Usage Exceeded Weekly Target",
+                 reason: "The current week's Fresh Water consumption has exceeded the planned operational strategy.",
+                 warningMessage: `Current Fresh Water Usage: ${currentFreshTotal.toFixed(1)}L | Target Limit: ${lastWeekStrategy.targetFreshLiters.toFixed(1)}L.`,
+                 recommendation: "Please prioritize Reused Water to maintain CTO compliance and reduce environmental impact.",
+                 timestamp: new Date().toLocaleString(),
+                 extraDetails: `Expected Fresh Water Target: ${lastWeekStrategy.targetFreshPct.toFixed(1)}%`
+              })
+           }).catch(err => console.error("Strategy alert email failed", err));
+        }
+     }
+  }, [weeklyHistory, lastWeekStrategy, hasSentStrategyAlert, userEmail, state.setup?.plantName]);
+
+  const chartData = weeklyHistory.map((dayData, i) => {
+    let fresh = dayData.fresh;
+    let reused = dayData.reused;
+    
+    const total = fresh + reused;
+    
+    let status = "normal";
+    if (total > ctoLimit) status = "exceeded";
+    else if (total >= ctoLimit * 0.9) status = "warning";
+
+    return {
+      name: dayData.name,
+      fresh: Number(fresh.toFixed(1)),
+      reused: Number(reused.toFixed(1)),
+      cto: ctoLimit,
+      total: Number(total.toFixed(1)),
+      status
+    };
+  });
+
+  const weeklyFresh = chartData.reduce((acc, curr) => acc + curr.fresh, 0);
+  const weeklyReused = chartData.reduce((acc, curr) => acc + curr.reused, 0);
+  
+  const totalWeekly = weeklyFresh + weeklyReused;
+  const freshPct = totalWeekly > 0 ? (weeklyFresh / totalWeekly) * 100 : 0;
+  const reusedPct = totalWeekly > 0 ? (weeklyReused / totalWeekly) * 100 : 0;
+  
+  const weeklyCtoLimit = (a?.ctoLimit || 15) * 7;
+  const ctoPct = weeklyCtoLimit > 0 ? (totalWeekly / weeklyCtoLimit) * 100 : 0;
+  
+  const diff = Math.abs(weeklyFresh - weeklyReused);
+  const maxVal = Math.max(weeklyFresh, weeklyReused);
+  const isBalanced = maxVal > 0 ? (diff / maxVal) <= 0.05 : false;
+
+  let envImpact = "LOW";
+  let envImpactColor = "text-emerald-400 bg-emerald-500/10 border-emerald-500/30";
+  let strategyBadge = "Reuse Dominant";
+  let strategyColor = "text-emerald-400 bg-emerald-500/10 border-emerald-500/30";
+
+  if (weeklyFresh > weeklyReused) {
+     envImpact = "HIGH";
+     envImpactColor = "text-red-400 bg-red-500/10 border-red-500/30";
+     strategyBadge = "Fresh Water Dominant";
+     strategyColor = "text-red-400 bg-red-500/10 border-red-500/30";
+  }
+  
+  if (isBalanced) {
+     envImpact = "MODERATE";
+     envImpactColor = "text-amber-400 bg-amber-500/10 border-amber-500/30";
+  }
+
+  let ctoStatus = "";
+  let ctoColor = "";
+  if (ctoPct > 90) {
+      ctoStatus = "Exceeded";
+      ctoColor = "text-red-400 bg-red-500/10 border-red-500/30";
+  } else if (ctoPct > 75) {
+      ctoStatus = "Near Limit";
+      ctoColor = "text-amber-400 bg-amber-500/10 border-amber-500/30";
+  } else {
+      ctoStatus = "Within Limit";
+      ctoColor = "text-emerald-400 bg-emerald-500/10 border-emerald-500/30";
+  }
+
+  let finalAiRecommendation = "";
+  if (weeklyFresh > weeklyReused) {
+      finalAiRecommendation = "Increase Reused Water allocation next week to reduce Fresh Water dependency.";
+  } else {
+      finalAiRecommendation = "Current reuse strategy is effective. Continue the same operational plan.";
   }
 
   return (
-    <div className={`glass-strong border border-${color}/40 bg-${color}/5 rounded-3xl p-6 shadow-xl relative`}>
-       <div className="flex items-center gap-2 mb-4">
-         <ShieldCheck className={`h-4 w-4 text-${color}`} />
-         <span className={`text-[9px] uppercase tracking-widest font-black text-${color}`}>AI Compliance Status</span>
-      </div>
-      
-      <div className="flex items-center gap-3 mb-4">
-         <div className={`h-3 w-3 rounded-full bg-${color} shadow-[0_0_10px_var(--${color})] animate-pulse`} />
-         <span className="text-lg font-black uppercase tracking-widest text-white">{title}</span>
-      </div>
-      
-      <p className="text-xs text-white/80 leading-relaxed font-medium mb-6">
-         {message}
-      </p>
+     <div className="mt-16 max-w-[1400px] mx-auto space-y-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8 pl-4">
+           <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-cyan/10 border border-cyan/20 flex items-center justify-center shadow-[0_0_15px_rgba(0,255,255,0.2)]">
+                 <TrendingUp className="h-6 w-6 text-cyan" />
+              </div>
+              <div>
+                 <h2 className="text-2xl font-black uppercase tracking-widest text-white drop-shadow-md">Weekly Fresh Water vs Reused Water Analysis</h2>
+                 <p className="text-[10px] text-cyan uppercase font-bold tracking-widest">Reusage of Water vis-a-vis CTO/Consumption</p>
+              </div>
+           </div>
+           
+           {completedDaysCount < 7 ? (
+             <button 
+                onClick={handleSimulateNextDay}
+                className="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full transition-all shadow-lg active:scale-95 flex items-center gap-2"
+             >
+                <Calendar className="h-4 w-4 text-cyan" />
+                Simulate Next Day
+             </button>
+           ) : (
+             <button 
+                onClick={handleSimulateNextWeek}
+                className="bg-indigo-500/20 hover:bg-indigo-500/40 border border-indigo-500/50 text-indigo-300 text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full transition-all shadow-lg active:scale-95 flex items-center gap-2"
+             >
+                <Calendar className="h-4 w-4 text-indigo-400" />
+                Simulate Next Week
+             </button>
+           )}
+        </div>
 
-      <div className={`bg-${color}/10 border border-${color}/20 rounded-xl p-4 flex gap-3 items-start`}>
-         <Brain className={`h-5 w-5 text-${color} shrink-0 mt-0.5`} />
-         <div className="flex flex-col gap-1">
-            <span className={`text-[10px] uppercase font-black text-${color} tracking-widest`}>AI Recommendation</span>
-            <span className="text-xs text-white/90 font-bold leading-relaxed">{recommendation}</span>
-         </div>
-      </div>
-    </div>
-  )
+        {/* The Premium Combination Chart */}
+        <div className="glass-strong border border-glass-border rounded-[2rem] p-8 lg:p-10 shadow-2xl relative overflow-hidden h-[500px]">
+           <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-cyan/5 blur-[120px] rounded-full translate-x-1/2 -translate-y-1/2 pointer-events-none" />
+           
+           <div className="h-full w-full relative z-10 pb-8">
+             <ResponsiveContainer width="100%" height="100%">
+               <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                 <defs>
+                   <linearGradient id="barFresh" x1="0" y1="0" x2="0" y2="1">
+                     <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.9}/>
+                     <stop offset="100%" stopColor="#06b6d4" stopOpacity={0.3}/>
+                   </linearGradient>
+                   <linearGradient id="barReused" x1="0" y1="0" x2="0" y2="1">
+                     <stop offset="0%" stopColor="#22c55e" stopOpacity={0.9}/>
+                     <stop offset="100%" stopColor="#22c55e" stopOpacity={0.3}/>
+                   </linearGradient>
+                   <linearGradient id="barWarning" x1="0" y1="0" x2="0" y2="1">
+                     <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9}/>
+                     <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.3}/>
+                   </linearGradient>
+                   <linearGradient id="barDanger" x1="0" y1="0" x2="0" y2="1">
+                     <stop offset="0%" stopColor="#ef4444" stopOpacity={0.9}/>
+                     <stop offset="100%" stopColor="#ef4444" stopOpacity={0.3}/>
+                   </linearGradient>
+                 </defs>
+                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                 <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10, fontWeight: 700 }} tickMargin={10} />
+                 <YAxis stroke="rgba(255,255,255,0.3)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10, fontWeight: 700 }} tickFormatter={(value) => `${value} L`} />
+                 <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                 <Legend wrapperStyle={{ fontSize: '12px', fontWeight: 'bold' }} />
+                 
+                 <Bar dataKey="reused" stackId="a" name="Reused Water (L)">
+                   {chartData.map((entry, index) => {
+                      let fillUrl = "url(#barReused)";
+                      if (entry.status === 'exceeded') fillUrl = "url(#barDanger)";
+                      else if (entry.status === 'warning') fillUrl = "url(#barWarning)";
+                      return <Cell key={`cell-reused-${index}`} fill={fillUrl} className={index === completedDaysCount && completedDaysCount < 7 ? "animate-pulse" : ""} />;
+                   })}
+                 </Bar>
+
+                 <Bar dataKey="fresh" stackId="a" name="Fresh Water (L)" radius={[4, 4, 0, 0]}>
+                   {chartData.map((entry, index) => {
+                      let fillUrl = "url(#barFresh)";
+                      if (entry.status === 'exceeded') fillUrl = "url(#barDanger)";
+                      else if (entry.status === 'warning') fillUrl = "url(#barWarning)";
+                      return <Cell key={`cell-fresh-${index}`} fill={fillUrl} className={index === completedDaysCount && completedDaysCount < 7 ? "animate-pulse" : ""} />;
+                   })}
+                 </Bar>
+                 
+                 <Line type="monotone" dataKey="cto" name="Daily CTO Limit (L)" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#000' }} activeDot={{ r: 6 }} />
+                 
+               </ComposedChart>
+             </ResponsiveContainer>
+           </div>
+        </div>
+
+        {/* SECTION 1: Fresh Water Consumption Summary */}
+        <div className="pt-8 space-y-4">
+           <h3 className="text-xl font-black uppercase tracking-widest text-white drop-shadow-md pl-4">Fresh Water Consumption Summary</h3>
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="glass-strong border border-glass-border rounded-2xl p-6 relative overflow-hidden flex flex-col justify-center shadow-lg">
+                 <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-cyan/10 blur-2xl rounded-full pointer-events-none" />
+                 <p className="text-[10px] text-white/50 uppercase font-black tracking-widest mb-1">Today's Fresh Water</p>
+                 <p className="text-3xl font-black text-white">{todayLiveFresh.toLocaleString('en-US', {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-base text-cyan">L</span></p>
+              </div>
+              <div className="glass-strong border border-glass-border rounded-2xl p-6 relative overflow-hidden flex flex-col justify-center shadow-lg">
+                 <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-cyan/10 blur-2xl rounded-full pointer-events-none" />
+                 <p className="text-[10px] text-white/50 uppercase font-black tracking-widest mb-1">Weekly Fresh Water</p>
+                 <p className="text-3xl font-black text-white">{weeklyFresh.toLocaleString('en-US', {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-base text-cyan">L</span></p>
+              </div>
+              <div className="glass-strong border border-glass-border rounded-2xl p-6 relative overflow-hidden flex flex-col justify-center shadow-lg">
+                 <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-cyan/10 blur-2xl rounded-full pointer-events-none" />
+                 <p className="text-[10px] text-white/50 uppercase font-black tracking-widest mb-1">Monthly Fresh Water</p>
+                 <p className="text-3xl font-black text-white">{(weeklyFresh * 4).toLocaleString('en-US', {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-base text-cyan">L</span></p>
+              </div>
+           </div>
+        </div>
+
+        {/* SECTION 2: Final Weekly Analysis */}
+        {completedDaysCount === 7 && (
+          <div className="pt-4 pb-12 space-y-4">
+             <h3 className="text-xl font-black uppercase tracking-widest text-white drop-shadow-md pl-4">Final Weekly Analysis</h3>
+             <div className="glass-strong border border-glass-border rounded-2xl p-8 relative overflow-hidden shadow-lg flex flex-col gap-8">
+                <div className="absolute right-0 top-0 w-64 h-64 bg-cyan/5 blur-[80px] rounded-full pointer-events-none" />
+                
+                {/* 1. Weekly Water Contribution */}
+                <div>
+                   <p className="text-[10px] text-white/50 uppercase font-black tracking-widest mb-4">Weekly Water Contribution</p>
+                   <div className="space-y-4 max-w-2xl">
+                      <div className="flex items-center gap-4">
+                         <span className="w-24 text-xs font-bold text-white/80 uppercase tracking-wider">Fresh Water</span>
+                         <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
+                            <div className="h-full bg-cyan transition-all duration-1000" style={{ width: `${freshPct}%` }} />
+                         </div>
+                         <span className="w-12 text-right text-xs font-black text-cyan">{freshPct.toFixed(0)}%</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                         <span className="w-24 text-xs font-bold text-white/80 uppercase tracking-wider">Reuse Water</span>
+                         <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
+                            <div className="h-full bg-eco transition-all duration-1000" style={{ width: `${reusedPct}%` }} />
+                         </div>
+                         <span className="w-12 text-right text-xs font-black text-eco">{reusedPct.toFixed(0)}%</span>
+                      </div>
+                   </div>
+                </div>
+
+                {/* Badges row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-white/10">
+                   <div>
+                      <p className="text-[10px] text-white/50 uppercase font-black tracking-widest mb-2">Environmental Impact</p>
+                      <div className={`inline-flex items-center px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${envImpactColor}`}>
+                         {envImpact === "LOW" && "🟢"} {envImpact === "MODERATE" && "🟡"} {envImpact === "HIGH" && "🔴"} {envImpact}
+                      </div>
+                   </div>
+                   <div>
+                      <p className="text-[10px] text-white/50 uppercase font-black tracking-widest mb-2">Weekly Water Strategy</p>
+                      <div className={`inline-flex items-center px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${strategyColor}`}>
+                         {strategyBadge === "Reuse Dominant" ? "🟢" : (strategyBadge === "Balanced Operations" ? "🟡" : "🔴")} {strategyBadge}
+                      </div>
+                   </div>
+                   <div>
+                      <p className="text-[10px] text-white/50 uppercase font-black tracking-widest mb-2">CTO Status</p>
+                      <div className={`inline-flex items-center px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${ctoColor}`}>
+                         {ctoStatus === "Within Limit" && "🟢"} {ctoStatus === "Near Limit" && "🟡"} {ctoStatus === "Exceeded" && "🔴"} {ctoStatus}
+                      </div>
+                   </div>
+                </div>
+
+                {/* Smart Recommendation */}
+                <div className="pt-4 border-t border-white/10">
+                   <div className="flex items-start gap-3">
+                      <div className="mt-1 h-6 w-6 rounded flex items-center justify-center bg-white/5 border border-white/10 text-cyan">
+                         <Brain className="h-4 w-4" />
+                      </div>
+                      <div>
+                         <p className="text-[10px] text-white/50 uppercase font-black tracking-widest mb-1">Smart Recommendation</p>
+                         <p className="text-sm font-bold text-white/90">{finalAiRecommendation}</p>
+                      </div>
+                   </div>
+                </div>
+             </div>
+          </div>
+        )}
+
+        {/* SECTION 3: AI Next Week Strategy */}
+        {lastWeekStrategy && (
+           <div className="pt-4 pb-12 space-y-4">
+              <h3 className="text-xl font-black uppercase tracking-widest text-white drop-shadow-md pl-4">Next Week Operational Strategy</h3>
+              <div className="glass-strong border border-glass-border rounded-2xl p-8 relative overflow-hidden shadow-lg">
+                 <div className="absolute left-0 top-0 w-64 h-64 bg-indigo-500/10 blur-[80px] rounded-full pointer-events-none" />
+                 
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                    {/* Last Week Overview */}
+                    <div className="bg-white/5 rounded-xl p-6 border border-white/5">
+                       <h4 className="text-[10px] uppercase font-black tracking-widest text-white/50 mb-4">Last Week Analysis</h4>
+                       <div className="space-y-4">
+                          <div className="flex justify-between items-center">
+                             <span className="text-sm font-bold text-white/80">Fresh Water</span>
+                             <span className="text-lg font-black text-cyan">{lastWeekStrategy.lastWeekFreshPct.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                             <span className="text-sm font-bold text-white/80">Reused Water</span>
+                             <span className="text-lg font-black text-eco">{lastWeekStrategy.lastWeekReusedPct.toFixed(1)}%</span>
+                          </div>
+                       </div>
+                    </div>
+                    
+                    {/* Next Week Target */}
+                    <div className="bg-white/5 rounded-xl p-6 border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)] relative overflow-hidden">
+                       <div className="absolute right-0 top-0 w-32 h-32 bg-indigo-500/20 blur-[40px] rounded-full pointer-events-none" />
+                       <h4 className="text-[10px] uppercase font-black tracking-widest text-indigo-400 mb-4">Smart Recommendation: Next Week Target</h4>
+                       <div className="space-y-4 relative z-10">
+                          <div className="flex justify-between items-center">
+                             <span className="text-sm font-bold text-white/80">Fresh Water</span>
+                             <span className="text-lg font-black text-cyan">{lastWeekStrategy.targetFreshPct.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                             <span className="text-sm font-bold text-white/80">Reused Water</span>
+                             <span className="text-lg font-black text-eco">{lastWeekStrategy.targetReusedPct.toFixed(1)}%</span>
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="mt-8 pt-6 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+                    <div>
+                       <p className="text-[10px] uppercase font-black tracking-widest text-white/50 mb-1">Expected Fresh Water Saving</p>
+                       <p className="text-2xl font-black text-white">{lastWeekStrategy.expectedSaving.toFixed(1)} <span className="text-sm text-cyan">L</span></p>
+                    </div>
+                    <div>
+                       <p className="text-[10px] uppercase font-black tracking-widest text-white/50 mb-1">Expected CTO Improvement</p>
+                       <p className="text-2xl font-black text-eco">+{lastWeekStrategy.expectedCtoImp.toFixed(1)}%</p>
+                    </div>
+                 </div>
+
+                 <div className="mt-8 pt-6 border-t border-white/10 relative z-10 flex justify-end">
+                    <button 
+                       onClick={() => handleApplyStrategy(lastWeekStrategy)}
+                       className="px-6 py-3 bg-indigo-500/20 hover:bg-indigo-500/40 border border-indigo-500/50 text-indigo-300 rounded-xl font-bold uppercase tracking-widest text-xs transition-colors flex items-center gap-2 shadow-lg hover:scale-105"
+                    >
+                       <Target className="h-4 w-4" />
+                       Apply Next Week Strategy
+                    </button>
+                 </div>
+              </div>
+           </div>
+        )}
+     </div>
+  );
 }
