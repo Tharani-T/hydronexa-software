@@ -912,12 +912,44 @@ export function InspectionQueue() {
           </div>
         </div>
 
-        {/* Main Queue Table */}
+        {/* Main Queue Table with Scroll Side Bar */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+          <style>{`
+            .inspection-queue-scroll::-webkit-scrollbar {
+              width: 8px;
+              height: 8px;
+            }
+            .inspection-queue-scroll::-webkit-scrollbar-track {
+              background: rgba(241, 245, 249, 0.6);
+              border-radius: 8px;
+            }
+            .dark .inspection-queue-scroll::-webkit-scrollbar-track {
+              background: rgba(15, 23, 42, 0.6);
+            }
+            .inspection-queue-scroll::-webkit-scrollbar-thumb {
+              background: #94a3b8;
+              border-radius: 8px;
+            }
+            .inspection-queue-scroll::-webkit-scrollbar-thumb:hover {
+              background: #64748b;
+            }
+            .dark .inspection-queue-scroll::-webkit-scrollbar-thumb {
+              background: #475569;
+            }
+            .dark .inspection-queue-scroll::-webkit-scrollbar-thumb:hover {
+              background: #64748b;
+            }
+          `}</style>
+          <div 
+            className="overflow-x-auto overflow-y-auto max-h-[460px] inspection-queue-scroll"
+            style={{
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#94a3b8 rgba(241, 245, 249, 0.5)'
+            }}
+          >
             <table className="w-full text-left border-collapse min-w-[850px]">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700">
+              <thead className="sticky top-0 z-10 bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700 shadow-xs">
+                <tr className="border-b border-slate-200 dark:border-slate-700">
                   <th className="py-4 px-6 text-xs uppercase tracking-wider text-slate-500 font-bold">Industry Name</th>
                   <th className="py-4 px-6 text-xs uppercase tracking-wider text-slate-500 font-bold">Location</th>
                   <th className="py-4 px-6 text-xs uppercase tracking-wider text-slate-500 font-bold">Compliance Issue</th>
