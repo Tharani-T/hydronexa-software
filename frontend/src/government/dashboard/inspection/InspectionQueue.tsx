@@ -496,10 +496,15 @@ export function InspectionQueue() {
     });
   }, [industries, scheduledInspections, searchQuery, regionFilter, districtFilter, priorityFilter, statusFilter]);
   
+  // Active scheduled inspections table (excludes completed inspections)
+  const activeScheduledInspections = useMemo(() => {
+    return scheduledInspections.filter(item => item.status !== 'Completed');
+  }, [scheduledInspections]);
+
   // KPI Metrics
   const totalPending = filteredIndustries.length;
   const highPriority = filteredIndustries.filter(i => i.priority === 'High').length;
-  const activeScheduled = scheduledInspections.filter(i => i.status === 'Scheduled').length;
+  const activeScheduled = activeScheduledInspections.filter(i => i.status === 'Scheduled').length;
   const totalCompletedKPI = scheduledInspections.filter(i => i.status === 'Completed').length;
 
   return (
@@ -585,7 +590,7 @@ export function InspectionQueue() {
             </p>
           </div>
           <span className="text-xs font-semibold text-slate-500 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 self-start">
-            Total Scheduled Records: {scheduledInspections.length}
+            Total Scheduled Records: {activeScheduledInspections.length}
           </span>
         </div>
 
@@ -604,18 +609,18 @@ export function InspectionQueue() {
                 </tr>
               </thead>
               <tbody>
-                {scheduledInspections.length === 0 ? (
+                {activeScheduledInspections.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-12 text-center text-slate-500 font-medium">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Calendar className="h-8 w-8 text-slate-400" />
-                        <p>No inspections have been scheduled yet.</p>
+                        <p>No active inspections in the scheduled queue.</p>
                         <p className="text-xs text-slate-400">Click "Schedule Inspection" on any high-priority industry in the queue below.</p>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  scheduledInspections.map((item) => {
+                  activeScheduledInspections.map((item) => {
                     const cd = getCountdown(item.scheduledDate, item.scheduledTime, item.status);
                     return (
                       <tr 
