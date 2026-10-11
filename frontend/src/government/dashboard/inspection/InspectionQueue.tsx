@@ -222,8 +222,10 @@ export function InspectionQueue() {
           });
         }
 
-        // Add to main queue (only if pending or high priority/inspection stage)
-        activeQueue.push(item);
+        // Add to main queue only if not already scheduled or completed
+        if (existingStatus !== "Scheduled" && existingStatus !== "Completed") {
+          activeQueue.push(item);
+        }
       });
 
       // Merge with any offline local schedules not in active DB list
@@ -233,7 +235,16 @@ export function InspectionQueue() {
         }
       });
 
-      setIndustries(activeQueue);
+      // Remove any industries that have an active Scheduled or Completed status
+      const scheduledEmails = new Set(dbSchedules.filter(s => s.status === 'Scheduled' || s.status === 'Completed').map(s => (s.email || '').toLowerCase().trim()));
+      const scheduledNames = new Set(dbSchedules.filter(s => s.status === 'Scheduled' || s.status === 'Completed').map(s => (s.industryName || '').toLowerCase().trim()));
+
+      const finalQueue = activeQueue.filter(ind => 
+        !scheduledEmails.has((ind.email || '').toLowerCase().trim()) &&
+        !scheduledNames.has((ind.name || '').toLowerCase().trim())
+      );
+
+      setIndustries(finalQueue);
       setScheduledInspections(dbSchedules);
       localStorage.setItem('hydronexa_scheduled_inspections', JSON.stringify(dbSchedules));
     } catch (e) {
@@ -349,17 +360,15 @@ export function InspectionQueue() {
     setScheduledInspections(updatedList);
     localStorage.setItem('hydronexa_scheduled_inspections', JSON.stringify(updatedList));
 
-    // Update queue industry status
-    setIndustries(prev => prev.map(ind => 
-      ind.email === scheduleTarget.email 
-        ? { ...ind, status: "Scheduled", scheduledDate: scheduleDate, scheduledTime: scheduleTime } 
-        : ind
+    // Remove scheduled industry from high priority queue table
+    setIndustries(prev => prev.filter(ind => 
+      ind.email !== scheduleTarget.email && ind.name !== scheduleTarget.name
     ));
 
     setScheduling(false);
     setScheduleTarget(null);
-    if (selectedIndustry && selectedIndustry.email === scheduleTarget.email) {
-      setSelectedIndustry({ ...selectedIndustry, status: "Scheduled", scheduledDate: scheduleDate, scheduledTime: scheduleTime });
+    if (selectedIndustry && (selectedIndustry.email === scheduleTarget.email || selectedIndustry.name === scheduleTarget.name)) {
+      setSelectedIndustry(null);
     }
   };
 
@@ -453,9 +462,28 @@ export function InspectionQueue() {
     return regionCompletedCounts.North + regionCompletedCounts.South + regionCompletedCounts.East + regionCompletedCounts.West;
   }, [regionCompletedCounts]);
 
-  // Filter Logic for Queue
+  // Filter Logic for Queue (Exclude any scheduled or completed industries)
   const filteredIndustries = useMemo(() => {
+    const scheduledEmailSet = new Set(
+      scheduledInspections
+        .filter(s => s.status === 'Scheduled' || s.status === 'Completed')
+        .map(s => (s.email || '').toLowerCase().trim())
+    );
+    const scheduledNameSet = new Set(
+      scheduledInspections
+        .filter(s => s.status === 'Scheduled' || s.status === 'Completed')
+        .map(s => (s.industryName || '').toLowerCase().trim())
+    );
+
     return industries.filter(ind => {
+      // Must be removed from queue if scheduled or completed
+      if (ind.status === 'Scheduled' || ind.status === 'Completed') return false;
+      const indEmail = (ind.email || '').toLowerCase().trim();
+      const indName = (ind.name || '').toLowerCase().trim();
+      if (scheduledEmailSet.has(indEmail) || scheduledNameSet.has(indName)) {
+        return false;
+      }
+
       const matchesSearch = ind.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             ind.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             ind.district.toLowerCase().includes(searchQuery.toLowerCase());
@@ -466,11 +494,11 @@ export function InspectionQueue() {
       
       return matchesSearch && matchesRegion && matchesDistrict && matchesPriority && matchesStatus;
     });
-  }, [industries, searchQuery, regionFilter, districtFilter, priorityFilter, statusFilter]);
+  }, [industries, scheduledInspections, searchQuery, regionFilter, districtFilter, priorityFilter, statusFilter]);
   
   // KPI Metrics
-  const totalPending = industries.filter(i => i.status === 'Pending').length;
-  const highPriority = industries.filter(i => i.priority === 'High' && i.status !== 'Completed').length;
+  const totalPending = filteredIndustries.length;
+  const highPriority = filteredIndustries.filter(i => i.priority === 'High').length;
   const activeScheduled = scheduledInspections.filter(i => i.status === 'Scheduled').length;
   const totalCompletedKPI = scheduledInspections.filter(i => i.status === 'Completed').length;
 
@@ -659,7 +687,7 @@ export function InspectionQueue() {
                         <td className="py-4 px-6 text-right">
                           {item.status === 'Completed' ? (
                             <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800/40">
-                              <CheckCircle className="h-4 w-4" /> Verified ✓
+                              <CheckCircle className="h-4 w-4" /> Verified 
                             </span>
                           ) : (
                             <button
@@ -667,7 +695,7 @@ export function InspectionQueue() {
                               title="Mark this inspection as completed"
                               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all hover:scale-105 active:scale-95"
                             >
-                              <Check className="h-3.5 w-3.5 stroke-[3]" /> Complete ✓
+                              <Check className="h-3.5 w-3.5 stroke-[3]" /> Complete 
                             </button>
                           )}
                         </td>
