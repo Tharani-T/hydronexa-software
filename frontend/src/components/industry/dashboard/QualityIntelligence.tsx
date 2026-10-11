@@ -38,6 +38,7 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
   const [timelineData, setTimelineData] = useState<any[]>([]);
   const { state } = useAppState();
   const [dailyTarget, setDailyTarget] = useState(state.setup.dailyReuseTarget || 500);
+  const [simWeek, setSimWeek] = useState<number>(0);
   
   const [todayReuseCycles, setTodayReuseCycles] = useState(() => parseInt(localStorage.getItem("qi_reuseCycles") || "0"));
   const [todayActualReuseCount, setTodayActualReuseCount] = useState(() => parseInt(localStorage.getItem("qi_actualReuseCount") || "0"));
@@ -104,7 +105,7 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
   const tempMax = a.tempMax ?? 35;
   const industryName = a.plantName ?? "HydroNexa Plant";
   const industryType = a.type ?? "Industrial";
-  const userEmail = a.email ?? "";
+  const userEmail = a.email || state.currentUserEmail || state.setup?.email || localStorage.getItem("userEmail") || localStorage.getItem("user_email") || "";
   const token = a.token ?? "";
 
   // 1. Water Reuse Eligibility & Safety Status
@@ -141,45 +142,58 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
 
   // 4. (Removed) Automated SMTP warning email trigger for quality breach removed as per user request.
 
-  const missedTargetEmailSentRef = useRef(localStorage.getItem("missedTargetEmailSent") === "true");
+  const sendingAlertRef = useRef(false);
 
   useEffect(() => {
-    // Count how many non-live rows have Missed Target (< 70%) in the current week (latest 7 days)
-    const missedCount = timelineData.slice(0, 7).filter((row, idx) => {
-       if (idx === 0) return false;
+    const currentSimWeek = simWeek === 0 ? 1 : simWeek;
+    const storageKey = `qi_weekly_alert_sent_week_${currentSimWeek}`;
+
+    // Count how many days in the current simulated week missed the review target
+    const missedCount = timelineData.slice(0, 7).filter((row) => {
        const rowTarget = row.target || dailyTarget;
        const percentReused = rowTarget > 0 ? (row.reused / rowTarget) * 100 : 0;
-       return row.status === "Missed Target" || (!row.status && percentReused < 100);
+       return row.status === "Missed Target" || row.reused < rowTarget || (!row.status && percentReused < 100);
     }).length;
 
-    if (missedCount >= 2 && !missedTargetEmailSentRef.current) {
-       missedTargetEmailSentRef.current = true;
-       localStorage.setItem("missedTargetEmailSent", "true");
+    const emailAlreadySent = localStorage.getItem(storageKey) === "true";
 
-       if (userEmail) {
-          fetch('/api/send-quality-alert', {
-             method: 'POST',
-             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-             },
-             body: JSON.stringify({
-                to: userEmail,
-                industryName,
-                subject: "Weekly Reuse Target Warning",
-                reason: `Missed Daily Reuse Target ${missedCount} times this week.`,
-                warningMessage: "You have failed to achieve the configured reuse water target for 2 or more days this week. Please improve your water reuse performance to maintain compliance.",
-                recommendation: "Please immediately review operational compliance, inspect reuse pumps, and ensure proper water routing.",
-                timestamp: new Date().toLocaleString()
-             })
-          }).catch(err => console.error('Failed to send missed target alert:', err));
-       }
-    } else if (missedCount < 2 && missedTargetEmailSentRef.current) {
-       // Reset if history is cleared or a new week starts
-       missedTargetEmailSentRef.current = false;
-       localStorage.setItem("missedTargetEmailSent", "false");
+    // Send email only when missed count reaches 2 or more, and email hasn't been sent yet for this week
+    if (missedCount >= 2 && !emailAlreadySent && !sendingAlertRef.current) {
+       sendingAlertRef.current = true;
+
+       const recipient = userEmail || "";
+
+       fetch('/api/send-weekly-review-alert', {
+          method: 'POST',
+          headers: {
+             'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+             to: recipient,
+             industryName: industryName || "HydroNexa Plant",
+             simulatedWeek: currentSimWeek,
+             missedCount: missedCount
+          })
+       })
+       .then(res => {
+          if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+          return res.json();
+       })
+       .then(data => {
+          sendingAlertRef.current = false;
+          if (data.success) {
+             localStorage.setItem(storageKey, "true");
+             console.log(`✅ Weekly Review Alert Email sent successfully for Simulated Week ${currentSimWeek}:`, data);
+          } else {
+             console.error(`❌ Failed to deliver Weekly Review Alert Email for Week ${currentSimWeek}:`, data.error);
+          }
+       })
+       .catch(err => {
+          sendingAlertRef.current = false;
+          console.error(`❌ Network error sending Weekly Review Alert Email for Week ${currentSimWeek}:`, err);
+       });
     }
-  }, [timelineData, dailyTarget, userEmail, industryName, token]);
+  }, [timelineData, dailyTarget, userEmail, industryName, token, simWeek]);
 
   useEffect(() => {
     async function fetchTarget() {
@@ -265,6 +279,7 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
   const achievementPercentage = dailyTarget > 0 ? (currentAchieved / dailyTarget) * 100 : 0;
 
   const [strategy, setStrategy] = useState<any>(null);
+  const [baseHistory, setBaseHistory] = useState<any[]>([]);
 
   useEffect(() => {
      const str = localStorage.getItem('waterNextWeekStrategy_mock');
@@ -278,34 +293,65 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
      return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
-  const handleSimulateNextWeek = () => {
-     let history = JSON.parse(localStorage.getItem('qualityTimeline_v2') || '[]');
-     
-     // Generate 3 new records sequentially based on current dailyTarget
-     let newRecords = [];
-     for(let i=1; i<=3; i++) {
-         const d = new Date();
-         d.setDate(d.getDate() + history.length + i); 
-         
-         const reused = Math.floor(Math.random() * (dailyTarget * 0.5) + (dailyTarget * 0.8)); // higher chance to hit or exceed target
-         const ready = Math.round(reused * 1.05);
-         const cycles = reused > 0 ? Math.max(1, Math.floor(reused / 3)) : 0;
-         
-         newRecords.unshift({
-            date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
-            ready,
-            reused,
-            cycles,
-            actualCount: cycles, // Mocking actual count
-            target: dailyTarget, // The active target saved for this row
-            isLive: false
-         });
-     }
-     
-     const updated = [...newRecords, ...history];
-     localStorage.setItem('qualityTimeline_v2', JSON.stringify(updated));
-     setTimelineData(updated);
-  };
+  const generateRecord = () => {
+      const d = new Date();
+      // place the new record after today (live row) by setting date to tomorrow + existing entries length
+      d.setDate(d.getDate() + timelineData.length);
+      const reused = Math.floor(Math.random() * (dailyTarget * 0.5) + (dailyTarget * 0.8));
+      const ready = Math.round(reused * 1.05);
+      const cycles = reused > 0 ? Math.max(1, Math.floor(reused / 3)) : 0;
+      return {
+        date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+        ready,
+        reused,
+        cycles,
+        actualCount: cycles,
+        target: dailyTarget,
+        isLive: false,
+      };
+   };
+
+   const handleSimulateNextWeek = () => {
+      const nextWeek = simWeek >= 4 ? 1 : simWeek + 1;
+      setSimWeek(nextWeek);
+
+      // Reset email trigger for the new simulated week
+      localStorage.setItem(`qi_weekly_alert_sent_week_${nextWeek}`, "false");
+
+      const d = new Date();
+      d.setDate(d.getDate() + timelineData.length);
+      const reused = Math.floor(Math.random() * (dailyTarget * 0.5) + (dailyTarget * 0.8));
+      const ready = Math.round(reused * 1.05);
+      const cycles = reused > 0 ? Math.max(1, Math.floor(reused / 3)) : 0;
+      const newRecord = {
+         date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+         ready,
+         reused,
+         cycles,
+         actualCount: cycles,
+         target: dailyTarget,
+         isLive: false,
+      };
+
+      if (nextWeek === 1) {
+         const liveRow = timelineData.find(row => row.isLive) || {
+            date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+            ready: currentAchieved,
+            reused: currentAchieved,
+            cycles: todayReuseCycles,
+            actualCount: todayActualReuseCount,
+            target: dailyTarget,
+            isLive: true
+         };
+         const updated = [liveRow, newRecord];
+         localStorage.setItem('qualityTimeline_v2', JSON.stringify(updated));
+         setTimelineData(updated);
+      } else {
+         const updated = [newRecord, ...timelineData];
+         localStorage.setItem('qualityTimeline_v2', JSON.stringify(updated));
+         setTimelineData(updated);
+      }
+   };
 
   useEffect(() => {
      let history = JSON.parse(localStorage.getItem('qualityTimeline_v2') || '[]');
@@ -336,6 +382,9 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
         }
         localStorage.setItem('qualityTimeline_v2', JSON.stringify(history));
      }
+
+     // Store base history for reset purposes
+     setBaseHistory(history);
 
      const actuallyReusedToday = currentAchieved;
      const todayDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
@@ -809,29 +858,26 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
          const monthlyTarget = state.setup.monthlyReuseTarget || (dailyTarget * 30);
          const weeklyTarget = monthlyTarget / 4;
 
-         const reversedData = [...timelineData].reverse();
-         
-         // Helper to get week sum
-         const getWeekSum = (weekIndex: number) => {
-             const start = weekIndex * 7;
-             const end = start + 7;
-             const weekData = reversedData.slice(start, end);
-             return weekData.reduce((acc, curr) => acc + (curr.reused || 0), 0);
-         };
+         const currentSim = simWeek === 0 ? 1 : simWeek;
 
-         const week1 = getWeekSum(0);
-         const week2 = getWeekSum(1);
-         const week3 = getWeekSum(2);
-         const week4 = getWeekSum(3);
-
-         const weeks = [
-            { name: "Week 1", reused: week1 },
-            { name: "Week 2", reused: week2 },
-            { name: "Week 3", reused: week3 },
-            { name: "Week 4", reused: week4 },
+         const simulatedWeekValues = [
+            weeklyTarget * 1.319,
+            weeklyTarget * 1.333,
+            weeklyTarget * 1.333,
+            weeklyTarget * 1.200,
          ];
 
-         const totalReused = week1 + week2 + week3 + week4;
+         const weeks = [1, 2, 3, 4].map((wNum, idx) => {
+            const isCompleted = wNum <= currentSim;
+            const reused = isCompleted ? simulatedWeekValues[idx] : 0;
+            return {
+               name: `Week ${wNum}`,
+               reused,
+               isCompleted,
+            };
+         });
+
+         const totalReused = weeks.reduce((acc, w) => acc + w.reused, 0);
          const monthlyAchievement = monthlyTarget > 0 ? (totalReused / monthlyTarget) * 100 : 0;
 
          let overallStatus = "🟡 Needs Improvement";
@@ -864,7 +910,8 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
                         </div>
                         <div>
                            <h4 className="font-black text-xl text-white tracking-widest uppercase drop-shadow-sm">Monthly Reuse Target Progress</h4>
-                           <span className="text-[10px] text-white/50 font-black tracking-widest uppercase mt-0.5 block">Target: {monthlyTarget.toLocaleString()} L</span>
+                           <span className="text-[10px] text-white/50 font-black tracking-widest block mb-1 group-hover:text-eco transition-colors">Target: {monthlyTarget.toLocaleString()} L</span>
+                           <span className="text-[10px] text-cyan font-black tracking-widest block">Week {currentSim} Completed</span>
                         </div>
                      </div>
                   </div>
@@ -872,27 +919,34 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
                   <div className="space-y-6 z-10">
                      {weeks.map((week, idx) => {
                         const weekPercent = weeklyTarget > 0 ? (week.reused / weeklyTarget) * 100 : 0;
-                        let barColor = "bg-danger";
-                        let statusText = "🔴 Below Target";
-                        if (weekPercent >= 90) {
-                           barColor = "bg-eco";
-                           statusText = "🟢 On Track";
-                        } else if (weekPercent >= 70) {
-                           barColor = "bg-amber-400";
-                           statusText = "🟡 Near Target";
+                        let barColor = "bg-white/10";
+                        let statusText = "⚪ Pending";
+                        if (week.isCompleted) {
+                           if (weekPercent >= 90) {
+                              barColor = "bg-eco";
+                              statusText = "🟢 ON TRACK";
+                           } else if (weekPercent >= 70) {
+                              barColor = "bg-amber-400";
+                              statusText = "🟡 Near Target";
+                           } else {
+                              barColor = "bg-danger";
+                              statusText = "🔴 Below Target";
+                           }
                         }
 
                         return (
                            <div key={idx} className="flex flex-col gap-2">
                               <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest">
-                                 <span className="text-white/80">{week.name}</span>
-                                 <span className="text-white/60">{statusText} ({weekPercent.toFixed(1)}%)</span>
+                                 <span className={week.isCompleted ? "text-white/80" : "text-white/40"}>{week.name}</span>
+                                 <span className={week.isCompleted ? "text-white/80" : "text-white/30"}>
+                                    {statusText} ({weekPercent.toFixed(1)}%)
+                                 </span>
                               </div>
                               <div className="h-3 w-full bg-white/5 rounded-full overflow-hidden border border-white/10 shadow-inner relative">
                                  <motion.div 
                                     initial={{ width: 0 }}
                                     animate={{ width: `${Math.min(100, weekPercent)}%` }}
-                                    transition={{ duration: 1.5, ease: "easeOut" }}
+                                    transition={{ duration: 0.8, ease: "easeOut" }}
                                     className={`h-full rounded-full ${barColor}`}
                                  />
                               </div>

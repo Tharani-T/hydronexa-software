@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useLocation } from '@tanstack/react-router';
 
-type Language = 'en' | 'ta';
+type Language = 'en' | 'ta' | 'hi';
 
 interface LanguageContextType {
   language: Language;
@@ -19,16 +19,23 @@ export function useGovLanguage() {
 
 // Helper to manage cookie
 function setCookie(name: string, value: string) {
+  if (typeof document === 'undefined') return;
   document.cookie = `${name}=${value};path=/`;
-  document.cookie = `${name}=${value};path=/;domain=${window.location.hostname}`;
+  if (typeof window !== 'undefined') {
+    document.cookie = `${name}=${value};path=/;domain=${window.location.hostname}`;
+  }
 }
 
 function deleteCookie(name: string) {
+  if (typeof document === 'undefined') return;
   document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
+  if (typeof window !== 'undefined') {
+    document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
+  }
 }
 
 function getCookie(name: string) {
+  if (typeof document === 'undefined') return null;
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
   if (match) return match[2];
   return null;
@@ -44,26 +51,38 @@ declare global {
 export function GovLanguageProvider({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [language, setLanguageState] = useState<Language>(() => {
-    const saved = localStorage.getItem('govLanguage');
-    if (saved === 'ta') return 'ta';
+    if (typeof window === 'undefined') return 'en';
+    try {
+      const saved = localStorage.getItem('govLanguage');
+      if (saved === 'ta') return 'ta';
+      if (saved === 'hi') return 'hi';
+    } catch (e) {}
     return 'en';
   });
 
   const setLanguage = (lang: Language) => {
-    localStorage.setItem('govLanguage', lang);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('govLanguage', lang);
+      } catch (e) {}
+    }
     setLanguageState(lang);
     if (lang === 'ta') {
       setCookie('googtrans', '/en/ta');
+    } else if (lang === 'hi') {
+      setCookie('googtrans', '/en/hi');
     } else {
       deleteCookie('googtrans');
     }
     // Reload to apply translation via Google script natively
-    window.location.reload();
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
   };
 
   useEffect(() => {
-    // Inject the script if language is Tamil and we are in government route
-    if (language === 'ta' && location.pathname.startsWith('/government')) {
+    // Inject the script if language is Tamil or Hindi and we are in government route
+    if ((language === 'ta' || language === 'hi') && location.pathname.startsWith('/government')) {
        const scriptId = 'google-translate-script';
        if (!document.getElementById(scriptId)) {
          window.googleTranslateElementInit = () => {

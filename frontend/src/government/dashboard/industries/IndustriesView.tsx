@@ -246,11 +246,10 @@ HydroNexa Government Monitoring Team`;
             value={districtFilter}
             onChange={e => setDistrictFilter(e.target.value)}
           >
-            <option value="All">All</option>
-            <option value="Tirupur">Tirupur</option>
-            <option value="Coimbatore">Coimbatore</option>
-            <option value="Erode">Erode</option>
-            <option value="Salem">Salem</option>
+            <option value="All">All Districts</option>
+            {Array.from(new Set(industries.map(i => i.district).filter(Boolean))).sort().map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
           </select>
         </div>
 

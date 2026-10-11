@@ -17,8 +17,6 @@ import { DigitalTwin } from "@/components/DigitalTwin";
 
 import {
   useAdaptive,
-  triggerBuzzer,
-  triggerAnalytics5SecHorn,
   CountUp,
   PredictiveAlert,
   TelemetryRow,
@@ -55,7 +53,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
       let currentAutoShift = "Night";
       if (hour >= 6 && hour < 14) currentAutoShift = "Morning";
       else if (hour >= 14 && hour < 22) currentAutoShift = "Afternoon";
-      
+
       const lastAutoShift = localStorage.getItem('lastAutoShift');
       if (lastAutoShift !== currentAutoShift) {
         updateSetup({ shiftTimings: currentAutoShift });
@@ -80,7 +78,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
               setLiveFlowRate(val1);
               localStorage.setItem('liveFlowRate', val1.toString());
             }
-            
+
             const val7 = parseFloat(latest.field7);
             if (!isNaN(val7) && val7 > 0) {
               setLiveReuseRate(val7);
@@ -139,7 +137,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
 
   const [shiftOffset, setShiftOffset] = useState<number>(() => parseFloat(localStorage.getItem('shiftOffset') || '0'));
   const [lastActiveShift, setLastActiveShift] = useState<string>(() => localStorage.getItem('lastActiveShift') || a.shiftTimings || 'Morning');
-  
+
   const [morningUsage, setMorningUsage] = useState<number>(() => parseFloat(localStorage.getItem('morningUsage') || '0'));
   const [afternoonUsage, setAfternoonUsage] = useState<number>(() => parseFloat(localStorage.getItem('afternoonUsage') || '0'));
   const [nightUsage, setNightUsage] = useState<number>(() => parseFloat(localStorage.getItem('nightUsage') || '0'));
@@ -173,62 +171,62 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
   const handleSimulateNextDay = () => {
     const completedCount = parseInt(localStorage.getItem('completedDaysCount_v6') || '6');
     if (completedCount < 7) {
-       let history = JSON.parse(localStorage.getItem('waterWeeklyHistory_mock_v6') || '[]');
-       if (history.length === 0) {
-         history = [
-           { name: "Day 1", fresh: 7.2, reused: 6.8 },
-           { name: "Day 2", fresh: 8.5, reused: 5.5 },
-           { name: "Day 3", fresh: 6.0, reused: 8.2 },
-           { name: "Day 4", fresh: 9.1, reused: 4.8 },
-           { name: "Day 5", fresh: 5.5, reused: 9.0 },
-           { name: "Day 6", fresh: 6.8, reused: 7.5 },
-           { name: "Day 7", fresh: 0, reused: 0 }
-         ];
-       }
-       history[completedCount] = {
-         ...history[completedCount],
-         fresh: freshWaterUsed,
-         reused: reuseWaterUsed
-       };
-       localStorage.setItem('waterWeeklyHistory_mock_v6', JSON.stringify(history));
-       
-       const nextCount = completedCount + 1;
-       localStorage.setItem('completedDaysCount_v6', nextCount.toString());
-       
-       if (nextCount === 7) {
-          const completedFresh = history.reduce((acc: any, d: any) => acc + d.fresh, 0);
-          const completedReused = history.reduce((acc: any, d: any) => acc + d.reused, 0);
-          const total = completedFresh + completedReused;
-          const freshPct = total > 0 ? (completedFresh / total) * 100 : 0;
-          const reusedPct = total > 0 ? (completedReused / total) * 100 : 0;
-          
-          let targetFreshPct = freshPct;
-          let targetReusedPct = reusedPct;
-          
-          if (completedFresh > completedReused) {
-             targetFreshPct = Math.max(20, freshPct - 30);
-             targetReusedPct = 100 - targetFreshPct;
-          } else {
-             targetFreshPct = Math.max(10, freshPct - 10);
-             targetReusedPct = 100 - targetFreshPct;
-          }
-          
-          const expectedSaving = (total * freshPct / 100) - (total * targetFreshPct / 100);
-          const expectedCtoImp = (expectedSaving / (a.ctoLimit * 7)) * 100;
-          
-          const newStrategy = {
-             lastWeekFreshPct: freshPct,
-             lastWeekReusedPct: reusedPct,
-             targetFreshPct,
-             targetReusedPct,
-             expectedSaving: expectedSaving > 0 ? expectedSaving : 0,
-             expectedCtoImp: expectedCtoImp > 0 ? expectedCtoImp : 0,
-             targetFreshLiters: (a.ctoLimit * 7) * (targetFreshPct / 100)
-          };
-          
-          localStorage.setItem('waterNextWeekStrategy_mock_v6', JSON.stringify(newStrategy));
-          localStorage.setItem('waterNextWeekAlertSent_mock_v6', 'false');
-       }
+      let history = JSON.parse(localStorage.getItem('waterWeeklyHistory_mock_v6') || '[]');
+      if (history.length === 0) {
+        history = [
+          { name: "Day 1", fresh: 7.2, reused: 6.8 },
+          { name: "Day 2", fresh: 8.5, reused: 5.5 },
+          { name: "Day 3", fresh: 6.0, reused: 8.2 },
+          { name: "Day 4", fresh: 9.1, reused: 4.8 },
+          { name: "Day 5", fresh: 5.5, reused: 9.0 },
+          { name: "Day 6", fresh: 6.8, reused: 7.5 },
+          { name: "Day 7", fresh: 0, reused: 0 }
+        ];
+      }
+      history[completedCount] = {
+        ...history[completedCount],
+        fresh: freshWaterUsed,
+        reused: reuseWaterUsed
+      };
+      localStorage.setItem('waterWeeklyHistory_mock_v6', JSON.stringify(history));
+
+      const nextCount = completedCount + 1;
+      localStorage.setItem('completedDaysCount_v6', nextCount.toString());
+
+      if (nextCount === 7) {
+        const completedFresh = history.reduce((acc: any, d: any) => acc + d.fresh, 0);
+        const completedReused = history.reduce((acc: any, d: any) => acc + d.reused, 0);
+        const total = completedFresh + completedReused;
+        const freshPct = total > 0 ? (completedFresh / total) * 100 : 0;
+        const reusedPct = total > 0 ? (completedReused / total) * 100 : 0;
+
+        let targetFreshPct = freshPct;
+        let targetReusedPct = reusedPct;
+
+        if (completedFresh > completedReused) {
+          targetFreshPct = Math.max(20, freshPct - 30);
+          targetReusedPct = 100 - targetFreshPct;
+        } else {
+          targetFreshPct = Math.max(10, freshPct - 10);
+          targetReusedPct = 100 - targetFreshPct;
+        }
+
+        const expectedSaving = (total * freshPct / 100) - (total * targetFreshPct / 100);
+        const expectedCtoImp = (expectedSaving / (a.ctoLimit * 7)) * 100;
+
+        const newStrategy = {
+          lastWeekFreshPct: freshPct,
+          lastWeekReusedPct: reusedPct,
+          targetFreshPct,
+          targetReusedPct,
+          expectedSaving: expectedSaving > 0 ? expectedSaving : 0,
+          expectedCtoImp: expectedCtoImp > 0 ? expectedCtoImp : 0,
+          targetFreshLiters: (a.ctoLimit * 7) * (targetFreshPct / 100)
+        };
+
+        localStorage.setItem('waterNextWeekStrategy_mock_v6', JSON.stringify(newStrategy));
+        localStorage.setItem('waterNextWeekAlertSent_mock_v6', 'false');
+      }
     }
 
     setLiveCtoUsed(0);
@@ -243,7 +241,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
     setCriticalBreach(false);
     emailSentRef.current = false;
     localStorage.setItem("emailSent", "false");
-    
+
     window.dispatchEvent(new Event('sync-storage-intelligence'));
   };
 
@@ -291,7 +289,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
   useEffect(() => {
     const threshold = THRESHOLDS.LEVEL_MAX; // 90%
     if (waterLevel >= threshold && prevLevelRef.current < threshold) {
-      triggerBuzzer();
+
     }
     prevLevelRef.current = waterLevel;
   }, [waterLevel]);
@@ -320,7 +318,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
 
     if (currentShift !== lastActiveShift) {
       const finalUsage = Math.max(0, currentUsed - shiftOffset);
-      
+
       if (lastActiveShift === 'Morning') {
         setMorningUsage(finalUsage);
         localStorage.setItem('morningUsage', finalUsage.toString());
@@ -342,10 +340,10 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
         setNightUsage(0);
         localStorage.setItem('nightUsage', '0');
       }
-      
+
       setLastActiveShift(currentShift);
       localStorage.setItem('lastActiveShift', currentShift);
-      
+
       setShiftOffset(currentUsed);
       localStorage.setItem('shiftOffset', currentUsed.toString());
     }
@@ -445,13 +443,13 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
   // CTO Compliance Calculation
   let ctoValidityDate = new Date(a.ctoValidity && a.ctoValidity.trim() !== "" ? a.ctoValidity : "2026-12-31");
   if (isNaN(ctoValidityDate.getTime())) {
-     ctoValidityDate = new Date("2026-12-31");
+    ctoValidityDate = new Date("2026-12-31");
   }
   const today = new Date();
   const diffTime = ctoValidityDate.getTime() - today.getTime();
   let ctoRemainingDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
   if (isNaN(ctoRemainingDays)) {
-     ctoRemainingDays = 365; // fallback
+    ctoRemainingDays = 365; // fallback
   }
 
   let ctoStatus = "🟢 Active";
@@ -465,33 +463,33 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
   }
 
   const shifts = [
-    { 
-      name: "Morning Shift", 
-      time: "06:00 AM – 02:00 PM", 
+    {
+      name: "Morning Shift",
+      time: "06:00 AM – 02:00 PM",
       active: activeShiftName === "Morning",
       used: "5.00",
       target: "4.0",
-      status: activeShiftName === "Morning" ? '🟢 Active' : 'Completed', 
+      status: activeShiftName === "Morning" ? '🟢 Active' : 'Completed',
       color: activeShiftName === "Morning" ? 'eco' : 'muted',
       exceeded: true
     },
-    { 
-      name: "Afternoon Shift", 
-      time: "02:00 PM – 10:00 PM", 
+    {
+      name: "Afternoon Shift",
+      time: "02:00 PM – 10:00 PM",
       active: activeShiftName === "Afternoon",
       used: afternoonUsedStr,
       target: "4.0",
-      status: activeShiftName === "Afternoon" ? '🟢 Active' : 'Completed', 
+      status: activeShiftName === "Afternoon" ? '🟢 Active' : 'Completed',
       color: activeShiftName === "Afternoon" ? 'eco' : 'muted',
       exceeded: parseFloat(afternoonUsedStr) > 4.0
     },
-    { 
-      name: "Night Shift", 
-      time: "10:00 PM – 06:00 AM", 
+    {
+      name: "Night Shift",
+      time: "10:00 PM – 06:00 AM",
       active: activeShiftName === "Night",
       used: nightUsedStr,
       target: "3.5",
-      status: activeShiftName === "Night" ? '🟢 Active' : 'Completed', 
+      status: activeShiftName === "Night" ? '🟢 Active' : 'Completed',
       color: activeShiftName === "Night" ? 'eco' : 'muted',
       exceeded: parseFloat(nightUsedStr) > 3.5
     }
@@ -513,26 +511,26 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
             <div className={`text-lg md:text-xl font-bold text-${ctoColor}`} style={{ color: `var(--${ctoColor})` }}>{ctoStatus}</div>
           </div>
         </div>
-        
+
         <div className="flex-1 w-full md:max-w-xl">
-           <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
-              <span>Valid Until: {ctoValidityDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-              <span className={`text-${ctoColor}`} style={{ color: `var(--${ctoColor})` }}>{ctoRemainingDays} Days Remaining</span>
-           </div>
-           <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
-              <motion.div 
-                 initial={{ width: 0 }} 
-                 animate={{ width: `${Math.min(100, (ctoRemainingDays / 365) * 100)}%` }} 
-                 transition={{ duration: 1.5, ease: "easeOut" }}
-                 className={`h-full bg-${ctoColor} rounded-full`}
-                 style={{ backgroundColor: `var(--${ctoColor})`, boxShadow: `0 0 10px var(--${ctoColor})` }}
-              />
-           </div>
-           {ctoRemainingDays < 30 && (
-             <div className="mt-4 text-[10px] text-danger font-black uppercase tracking-widest flex items-center gap-2 bg-danger/10 p-3 rounded-xl border border-danger/20">
-               <AlertTriangle className="h-4 w-4 shrink-0 animate-pulse" /> CTO renewal should be initiated to maintain continuous compliance.
-             </div>
-           )}
+          <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
+            <span>Valid Until: {ctoValidityDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span className={`text-${ctoColor}`} style={{ color: `var(--${ctoColor})` }}>{ctoRemainingDays} Days Remaining</span>
+          </div>
+          <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.min(100, (ctoRemainingDays / 365) * 100)}%` }}
+              transition={{ duration: 1.5, ease: "easeOut" }}
+              className={`h-full bg-${ctoColor} rounded-full`}
+              style={{ backgroundColor: `var(--${ctoColor})`, boxShadow: `0 0 10px var(--${ctoColor})` }}
+            />
+          </div>
+          {ctoRemainingDays < 30 && (
+            <div className="mt-4 text-[10px] text-danger font-black uppercase tracking-widest flex items-center gap-2 bg-danger/10 p-3 rounded-xl border border-danger/20">
+              <AlertTriangle className="h-4 w-4 shrink-0 animate-pulse" /> CTO renewal should be initiated to maintain continuous compliance.
+            </div>
+          )}
         </div>
       </div>
 
@@ -591,7 +589,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                 <div className={`text-6xl font-black font-display tracking-tighter ${currentUsed > a.ctoLimit ? 'text-danger' : ''}`}>{ctoPct}%</div>
                 <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-1">Utilization</div>
-                
+
                 <div className="mt-2 text-[9px] font-bold text-muted-foreground flex flex-col items-center">
                   {flowError ? (
                     <span className="text-amber-400">Waiting for Live Data...</span>
@@ -698,7 +696,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
             <div key={i} className={`p-6 rounded-2xl border transition-all ${shift.active ? 'border-cyan shadow-glow bg-cyan/10' : 'border-glass-border bg-white/5'} relative`}>
               {shift.exceeded && (
                 <div className="absolute -top-3 -right-3 bg-danger text-white text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-[0_0_15px_var(--danger)] z-10 animate-bounce">
-                   Exceeded Today
+                  Exceeded Today
                 </div>
               )}
               <div className="flex justify-between items-start mb-4">
@@ -803,13 +801,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
               icon={Droplets}
               status={(data?.waterLevel ?? 0) >= THRESHOLDS.LEVEL_MAX ? 'Critical' : (data?.waterLevel ?? 0) <= THRESHOLDS.LEVEL_MIN ? 'Moderate' : 'Stable'}
             />
-            <button
-              onClick={triggerBuzzer}
-              className="ml-auto p-1.5 rounded-lg bg-warn/15 hover:bg-warn/30 border border-warn/30 hover:border-warn/60 text-warn hover:text-warn-glow transition-all duration-300 flex items-center justify-center shrink-0 active:scale-90"
-              title="Manual Buzzer Sound Test"
-            >
-              <Volume2 className="h-3.5 w-3.5 animate-pulse" />
-            </button>
+
           </div>
           <SensorStatus label="pH Sensor" value={`${data?.ph?.toFixed(1) ?? 7.0} pH`} active={true} icon={Beaker}
             status={((data?.ph ?? 7) < a.phMin || (data?.ph ?? 7) > a.phMax) ? 'Critical' : 'Stable'} />

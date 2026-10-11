@@ -27,11 +27,11 @@ export function useAdaptive() {
   const monthlyCtoLimit = s.monthlyCtoLimit ?? 0;
   const type = s.industryType ?? "Industrial";
   const shiftTimings = s.shiftTimings ?? "Morning";
-  
+
   const email = state.currentUserEmail;
   const plantName = s.plantName ?? "Industrial Facility";
   const token = state.token || localStorage.getItem("token");
-  
+
   // Dynamic standards based on industry type
   const standardOptions = {
     Pharma: { tempMax: 25, phRange: "6.8 - 7.4", phMin: 6.8, phMax: 7.4, mode: "Purity Mode" },
@@ -65,7 +65,7 @@ export function triggerBuzzer() {
     gainNode.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.05);
     gainNode.gain.setValueAtTime(0.18, ctx.currentTime + 0.25);
     gainNode.gain.linearRampToValueAtTime(0.0, ctx.currentTime + 0.3);
-    
+
     // Beep 2
     gainNode.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.38);
     gainNode.gain.setValueAtTime(0.18, ctx.currentTime + 0.58);
@@ -149,14 +149,14 @@ export function CountUp({ value, suffix = "", className = "" }: { value: number;
 
 export function PredictiveAlert({ title, desc, sev }: any) {
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       className={`p-4 rounded-xl border-l-4 bg-${sev}/10 border-${sev}/30`}
       style={{ borderLeftColor: `var(--${sev})` }}
     >
-       <div className="font-black text-[10px] uppercase tracking-widest mb-1" style={{ color: `var(--${sev})` }}>{title}</div>
-       <div className="text-xs text-muted-foreground font-medium">{desc}</div>
+      <div className="font-black text-[10px] uppercase tracking-widest mb-1" style={{ color: `var(--${sev})` }}>{title}</div>
+      <div className="text-xs text-muted-foreground font-medium">{desc}</div>
     </motion.div>
   );
 }
@@ -164,11 +164,11 @@ export function PredictiveAlert({ title, desc, sev }: any) {
 export function TelemetryRow({ label, status, color }: any) {
   return (
     <div className="flex items-center justify-between p-3 rounded-xl glass border border-glass-border/50">
-       <span className="text-[10px] font-bold text-muted-foreground">{label}</span>
-       <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: `var(--${color})` }} />
-          <span className="text-[10px] font-black uppercase" style={{ color: `var(--${color})` }}>{status}</span>
-       </div>
+      <span className="text-[10px] font-bold text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-2">
+        <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: `var(--${color})` }} />
+        <span className="text-[10px] font-black uppercase" style={{ color: `var(--${color})` }}>{status}</span>
+      </div>
     </div>
   );
 }
@@ -176,8 +176,8 @@ export function TelemetryRow({ label, status, color }: any) {
 export function MiniStat({ label, value, color }: any) {
   return (
     <div className="p-3 rounded-xl glass border border-glass-border">
-       <div className="text-[8px] uppercase tracking-widest text-muted-foreground font-bold opacity-50">{label}</div>
-       <div className="text-xs font-black font-display tracking-tight mt-0.5" style={{ color: `var(--${color})` }}>{value}</div>
+      <div className="text-[8px] uppercase tracking-widest text-muted-foreground font-bold opacity-50">{label}</div>
+      <div className="text-xs font-black font-display tracking-tight mt-0.5" style={{ color: `var(--${color})` }}>{value}</div>
     </div>
   );
 }

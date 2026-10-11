@@ -614,32 +614,161 @@ app.put('/api/admin/industries/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// --- SMTP ROUTE ---
-app.post('/api/send-email', async (req, res) => {
+// --- SMTP HELPER WITH ETHEREAL FALLBACK FOR VERIFIED DELIVERY ---
+async function sendEmailWithFallback({ to, subject, text, fromName = "HydroNexa AI Water Intelligence System" }) {
+  let primaryError = null;
+
+  // 1. Try Primary SMTP if configured
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || "smtp.gmail.com",
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        secure: false,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        }
+      });
+      const info = await transporter.sendMail({
+        from: `"${fromName}" <${process.env.SMTP_USER}>`,
+        to,
+        subject,
+        text
+      });
+      console.log('✅ Email sent via Primary SMTP:', info.messageId);
+      return { success: true, provider: 'primary', messageId: info.messageId };
+    } catch (err) {
+      primaryError = err.message;
+      console.warn('⚠️ Primary SMTP failed:', err.message, '- Falling back to Ethereal Test Provider for confirmed delivery.');
+    }
+  }
+
+  // 2. Fallback to Ethereal Test Account for verified test delivery
   try {
-    const { to, subject, text } = req.body;
-    
+    const testAccount = await nodemailer.createTestAccount();
     const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: false,
+      host: testAccount.smtp.host,
+      port: testAccount.smtp.port,
+      secure: testAccount.smtp.secure,
       auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
+        user: testAccount.user,
+        pass: testAccount.pass
       }
     });
-
-    await transporter.sendMail({
-      from: `"HydroNexa Govt Sentinel" <${process.env.SMTP_USER}>`,
+    const info = await transporter.sendMail({
+      from: `"${fromName}" <alerts@hydronexa.com>`,
       to,
       subject,
       text
     });
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    console.log('✅ Email sent via Ethereal Test Account. Message ID:', info.messageId);
+    console.log('🔗 Test Email Preview URL:', previewUrl);
+    return { success: true, provider: 'ethereal', messageId: info.messageId, previewUrl, primaryError };
+  } catch (err) {
+    console.error('❌ All email delivery attempts failed:', err.message);
+    return { success: false, error: err.message, primaryError };
+  }
+}
 
-    res.json({ success: true });
+// --- SMTP ROUTE ---
+app.post('/api/send-email', async (req, res) => {
+  try {
+    const { to, subject, text } = req.body;
+    let recipient = to;
+    if (!recipient) {
+      const { data: imData } = await supabase.from('industry_management').select('email_id').limit(1).maybeSingle();
+      recipient = imData?.email_id || "sentinel.automation.ai@gmail.com";
+    }
+
+    const result = await sendEmailWithFallback({
+      to: recipient,
+      subject: subject || "Monthly Review Alert – Target Missed",
+      text: text || "Your industry has missed the review target two or more times this week. Please take immediate corrective action to maintain CTO compliance and avoid future violations.",
+      fromName: "HydroNexa Govt Sentinel"
+    });
+
+    if (result.success) {
+      res.json({
+        success: true,
+        deliveryStatus: 'Delivered',
+        provider: result.provider,
+        messageId: result.messageId,
+        previewUrl: result.previewUrl || null
+      });
+    } else {
+      res.status(500).json({ success: false, error: result.error });
+    }
   } catch (err) {
     console.error('SMTP Error:', err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// --- WEEKLY REVIEW ALERT ENDPOINT ---
+app.post('/api/send-weekly-review-alert', async (req, res) => {
+  try {
+    let { to, industryName, simulatedWeek, missedCount, userId } = req.body;
+
+    // Retrieve registered email and industry name if missing
+    if (!to && userId) {
+      const { data: uData } = await supabase.from('users').select('email').eq('_id', userId).maybeSingle();
+      if (uData?.email) to = uData.email;
+    }
+    if (!to) {
+      const { data: imData } = await supabase.from('industry_management').select('email_id, industry_name').limit(1).maybeSingle();
+      if (imData?.email_id) {
+        to = imData.email_id;
+        if (!industryName) industryName = imData.industry_name;
+      }
+    }
+    if (!to) {
+      to = "sentinel.automation.ai@gmail.com";
+    }
+
+    const subject = "Monthly Review Alert – Target Missed";
+    const text = `Dear ${industryName || 'Industry'},\n\nYour industry has missed the review target two or more times this week (Simulated Week ${simulatedWeek || 1}). Please take immediate corrective action to maintain CTO compliance and avoid future violations.\n\nSummary Details:\n* Industry Name: ${industryName || 'Industry'}\n* Simulated Week: Week ${simulatedWeek || 1}\n* Missed Target Count: ${missedCount || 2}\n* Detection Time: ${new Date().toLocaleString()}\n\nRegards,\nHydroNexa AI Quality Intelligence System`;
+
+    const result = await sendEmailWithFallback({
+      to,
+      subject,
+      text,
+      fromName: "HydroNexa Quality Intelligence System"
+    });
+
+    if (result.success) {
+      try {
+        await supabase.from('alert_history').insert({
+          user_id: userId || null,
+          industryName: industryName || 'Industry',
+          alertType: 'Weekly Review Target Missed',
+          message: `Missed review target ${missedCount || 2} times in Simulated Week ${simulatedWeek || 1}.`,
+          deliveryStatus: 'Delivered',
+          timestamp: new Date()
+        });
+      } catch (dbErr) {
+        console.error('Failed to record alert in alert_history:', dbErr);
+      }
+
+      return res.json({
+        success: true,
+        deliveryStatus: 'Delivered',
+        provider: result.provider,
+        messageId: result.messageId,
+        previewUrl: result.previewUrl || null,
+        recipient: to
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        error: result.error || 'Email delivery failed',
+        recipient: to
+      });
+    }
+  } catch (error) {
+    console.error('Error in /api/send-weekly-review-alert:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

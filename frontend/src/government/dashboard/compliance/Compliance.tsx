@@ -9,7 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell, ReferenceLine
 } from "recharts";
 import {
-  LayoutDashboard, Factory, ShieldCheck, AlertTriangle, Brain, Mail, FileText, Settings,
+  LayoutDashboard, Factory, ShieldCheck, AlertTriangle, Mail, FileText, Settings,
   Send, Sparkles, TrendingUp, TrendingDown, Activity, Terminal, ShieldAlert, Globe, Loader2, CheckCircle2,
   Droplets, RefreshCw, AlertCircle, MapPin
 } from "lucide-react";
@@ -107,25 +107,6 @@ export function Compliance() {
     })).sort((a, b) => b.cto - a.cto);
   }, [data]);
 
-  const insights = useMemo(() => {
-    if (data.length === 0 || districtMetrics.length === 0) return [];
-    
-    const bestDist = districtMetrics[0]?.district;
-    const worstDist = districtMetrics[districtMetrics.length - 1]?.district;
-    
-    const highestCTO = [...data].sort((a, b) => (Number(b.current_cto_consumption) || 0) - (Number(a.current_cto_consumption) || 0))[0];
-    const bestReuse = [...data].sort((a, b) => (Number(b.current_reuse_percentage) || 0) - (Number(a.current_reuse_percentage) || 0))[0];
-
-    return [
-      { text: `District with highest average water reuse: `, bold: `${bestDist} (${districtMetrics[0]?.avgReuse}%)`, isBad: false },
-      { text: `District requiring reuse intervention: `, bold: `${worstDist} (${districtMetrics[districtMetrics.length - 1]?.avgReuse}%)`, isBad: true },
-      { text: `Industry with maximum fresh water dependency: `, bold: `${highestCTO?.industry_name} (${highestCTO?.current_cto_consumption} L)`, isBad: true },
-      { text: `Highest performing industry for sustainable reuse: `, bold: `${bestReuse?.industry_name} (${bestReuse?.current_reuse_percentage}%)`, isBad: false },
-      { text: `Estimated fresh water successfully conserved across all monitored facilities: `, bold: `${metrics.totalSaved.toLocaleString()} L`, isBad: false },
-      { text: `Currently active critical compliance alerts demanding immediate regulatory action: `, bold: `${metrics.criticalCount} Industries`, isBad: metrics.criticalCount > 0 }
-    ];
-  }, [data, districtMetrics, metrics]);
-
   if (loading) {
     return <div className="h-64 flex items-center justify-center text-slate-500"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   }
@@ -162,24 +143,6 @@ export function Compliance() {
           <div className={`text-3xl font-black ${metrics.criticalCount > 0 ? 'text-red-700 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>{metrics.criticalCount}</div>
         </div>
       </div>
-
-      {/* 7. Executive Insights Panel */}
-      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm">
-        <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><Brain className="h-5 w-5 text-indigo-600" /> Executive Insights & Observations</h2>
-        <div className="grid md:grid-cols-2 gap-x-8 gap-y-4">
-          {insights.map((insight, idx) => (
-            <div key={idx} className="flex items-start gap-2 text-sm">
-              <div className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0" />
-              <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
-                {insight.text}
-                <span className={`font-bold ml-1 ${insight.isBad ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
-                  {insight.bold}
-                </span>
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
 
       <div className="grid lg:grid-cols-2 gap-8">
         {/* 2. Water Reuse vs CTO Comparison Chart */}

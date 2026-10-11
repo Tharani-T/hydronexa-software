@@ -30,15 +30,15 @@ export function Reports() {
     if (data.length === 0) return null;
 
     data.forEach(d => {
-      const consumption = Number(d.cto_consumption) || 0;
-      const limit = Number(d.cto_limit) || 0;
-      const reuse = Number(d.reuse_percent) || 0;
+      const consumption = Number(d.current_cto_consumption ?? d.cto_consumption ?? 0);
+      const limit = Number(d.daily_cto_limit ?? d.cto_limit ?? 0);
+      const reuse = Number(d.current_reuse_percentage ?? d.reuse_percent ?? 0);
       
       fresh += consumption;
       reused += consumption * (reuse / 100);
       avg += reuse;
 
-      if (consumption <= limit) ctoCompliantCount++;
+      if (limit > 0 ? consumption <= limit : true) ctoCompliantCount++;
       if (d.compliance_status === 'Critical') criticalCount++;
       if (d.compliance_status === 'Warning') warningCount++;
 
@@ -85,7 +85,11 @@ export function Reports() {
   const handleDownloadCSV = (reportName: string) => {
     let csvContent = "Industry Name,District,Region,CTO Consumption (L),CTO Limit (L),Reuse %,Reuse Target,Compliance Status\n";
     data.forEach(d => {
-      csvContent += `"${d.name}","${d.district || 'Unknown'}","${d.region || 'Unknown'}","${d.cto_consumption}","${d.cto_limit}","${d.reuse_percent}","${d.reuse_target}","${d.compliance_status}"\n`;
+      const consumption = Number(d.current_cto_consumption ?? d.cto_consumption ?? 0);
+      const limit = Number(d.daily_cto_limit ?? d.cto_limit ?? 0);
+      const reuse = Number(d.current_reuse_percentage ?? d.reuse_percent ?? 0);
+      const target = Number(d.daily_reuse_target ?? d.reuse_target ?? 0);
+      csvContent += `"${d.industry_name || d.name || 'Industry'}","${d.district || 'Tamil Nadu'}","${d.region || 'South'}","${consumption}","${limit}","${reuse}","${target}","${d.compliance_status || 'Safe'}"\n`;
     });
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);

@@ -366,14 +366,14 @@ function LandingPage() {
             <form className="space-y-4" onSubmit={handleSubmit}>
               <Input 
                 label="Your name" 
-                placeholder="Jane Doe" 
+                placeholder="Enter a Name" 
                 value={name} 
                 onChange={(e) => setName(e.target.value)} 
                 required 
               />
               <Input 
                 label="Work email" 
-                placeholder="jane@plant.com" 
+                placeholder="xyz@plant.com" 
                 type="email" 
                 value={email} 
                 onChange={(e) => setEmail(e.target.value)} 
