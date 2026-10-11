@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { 
   Factory, Activity, ShieldCheck, AlertTriangle, 
   ChevronRight, FileText, Download, Send, Clock, 
