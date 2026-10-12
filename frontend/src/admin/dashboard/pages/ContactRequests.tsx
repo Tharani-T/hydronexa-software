@@ -505,31 +505,6 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
                       </p>
                     </div>
                   )}
-
-                  {docStatus === "approved" && extractedDetails && (
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                      <p className="font-semibold text-emerald-500 flex items-center gap-2 mb-3">
-                        <CheckCircle2 className="h-4 w-4" /> Approved CTO Details
-                      </p>
-                      <div className="grid md:grid-cols-2 gap-3 text-sm">
-                        {[
-                          { label: "Daily CTO Water Limit", value: extractedDetails.dailyWaterLimit ?? s.ctoLimit, suffix: "L/day" },
-                          { label: "Monthly CTO Limit", value: extractedDetails.monthlyWaterLimit ?? s.monthlyCtoLimit, suffix: "L" },
-                          { label: "CTO Validity Date", value: extractedDetails.validityDate ?? s.ctoValidity },
-                          { label: "Daily Reuse Target", value: extractedDetails.dailyReuseTarget ?? s.dailyReuseTarget ?? 0, suffix: "L" },
-                          { label: "Monthly Reuse Target", value: extractedDetails.monthlyReuseTarget ?? s.monthlyReuseTarget ?? 0, suffix: "L" },
-                          { label: "Reuse Target", value: extractedDetails.reuseTarget ?? s.reuseTarget ?? 0, suffix: "%" },
-                        ].map((row) => (
-                          <div key={row.label} className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
-                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{row.label}</div>
-                            <div className="text-base font-bold text-emerald-500">
-                              {row.value ?? "—"}{row.suffix && <span className="text-xs font-medium text-muted-foreground ml-1">{row.suffix}</span>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
               <div className="grid md:grid-cols-2 gap-5">

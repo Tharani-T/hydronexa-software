@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   Activity, Droplets, AlertTriangle, ShieldCheck, 
   Target, ActivitySquare, CheckCircle2, Zap, Clock, Calendar, Brain, BellRing, Settings, Power,
-  Leaf, BarChart3, PieChart, TrendingUp
+  Leaf, BarChart3, PieChart, TrendingUp, Mail
 } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { triggerBuzzer, useAdaptive } from "./shared";
@@ -626,6 +626,8 @@ function WeeklyWaterReuseVsFreshWaterAnalysis({ data }: any) {
 
     setLastWeekStrategy(null);
     localStorage.removeItem('waterNextWeekStrategy_mock_v8');
+    localStorage.removeItem('weeklyReuseMissedAlertSent_v8');
+    setHasSentReuseMissedAlert(false);
 
     const liveFlowRate = parseFloat(localStorage.getItem('liveFlowRate') || '0');
     const liveReuseRate = parseFloat(localStorage.getItem('liveReuseRate') || '0');
@@ -731,6 +733,76 @@ function WeeklyWaterReuseVsFreshWaterAnalysis({ data }: any) {
   const weeklyCtoLimit = (a?.ctoLimit || 15) * 7;
   const ctoPct = weeklyCtoLimit > 0 ? (totalWeekly / weeklyCtoLimit) * 100 : 0;
   
+  
+  // Daily Reuse Target calculation and missed target detection (>= 2 missed days per week)
+  const dailyReuseTargetPct = state.setup?.dailyReuseTarget ?? state.setup?.reuseTarget ?? 60;
+  
+  const weeklyTargetStats = useMemo(() => {
+    let missedCount = 0;
+    weeklyHistory.forEach((day, idx) => {
+      if (idx < completedDaysCount) {
+        const total = day.fresh + day.reused;
+        if (total > 0) {
+          const reusePct = (day.reused / total) * 100;
+          if (reusePct < dailyReuseTargetPct) {
+            missedCount++;
+          }
+        }
+      }
+    });
+    return { missedCount, targetPct: dailyReuseTargetPct };
+  }, [weeklyHistory, completedDaysCount, dailyReuseTargetPct]);
+
+  const [hasSentReuseMissedAlert, setHasSentReuseMissedAlert] = useState(() => {
+    return localStorage.getItem('weeklyReuseMissedAlertSent_v8') === 'true';
+  });
+
+  useEffect(() => {
+    if (weeklyTargetStats.missedCount >= 2 && !hasSentReuseMissedAlert && userEmail) {
+      setHasSentReuseMissedAlert(true);
+      localStorage.setItem('weeklyReuseMissedAlertSent_v8', 'true');
+
+      const emailSubject = "Weekly Reuse Target Not Achieved";
+      const emailBody = `Dear ${state.setup?.plantName || 'Industry'},
+
+The industry failed to achieve the configured Daily Reuse Target multiple times during this week (${weeklyTargetStats.missedCount} missed days).
+Please review plant operations and increase Reused Water utilization immediately.
+
+• Daily Reuse Target: ${weeklyTargetStats.targetPct}%
+• Missed Days Count: ${weeklyTargetStats.missedCount} of 7 days
+• Total Weekly Reused Water: ${weeklyReused.toFixed(1)}L
+• Total Weekly Fresh Water: ${weeklyFresh.toFixed(1)}L
+
+Regards,
+HydroNexa Compliance System`;
+
+      fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: userEmail,
+          subject: emailSubject,
+          text: emailBody,
+          fromName: "HydroNexa Compliance System"
+        })
+      }).catch(err => console.error("Weekly reuse alert email failed", err));
+
+      try {
+        supabase.from('alert_history').insert({
+          industryname: state.setup?.plantName || 'Industry Facility',
+          alerttype: 'Weekly Reuse Target Not Achieved',
+          message: `Missed reuse target ${weeklyTargetStats.missedCount} times this week`,
+          deliverystatus: 'Delivered',
+          timestamp: new Date().toISOString()
+        }).then(({ error }) => {
+          if (error) console.error("Error inserting alert_history for weekly target", error);
+        });
+      } catch (e) {
+        console.error("Supabase insert error", e);
+      }
+    }
+  }, [weeklyTargetStats.missedCount, weeklyTargetStats.targetPct, hasSentReuseMissedAlert, userEmail, state.setup?.plantName, weeklyReused, weeklyFresh]);
+
   const diff = Math.abs(weeklyFresh - weeklyReused);
   const maxVal = Math.max(weeklyFresh, weeklyReused);
   const isBalanced = maxVal > 0 ? (diff / maxVal) <= 0.05 : false;
@@ -859,6 +931,51 @@ function WeeklyWaterReuseVsFreshWaterAnalysis({ data }: any) {
                </ComposedChart>
              </ResponsiveContainer>
            </div>
+        </div>
+
+        
+        {/* SECTION 0.5: Missed Weekly Target Compliance Card */}
+        <div className={`rounded-2xl p-5 border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all shadow-lg ${
+          weeklyTargetStats.missedCount >= 2 
+            ? 'bg-amber-500/10 border-amber-500/30' 
+            : 'bg-eco/10 border-eco/30'
+        }`}>
+          <div className="flex items-start gap-3">
+            <div className={`p-2.5 rounded-xl border mt-0.5 ${
+              weeklyTargetStats.missedCount >= 2 
+                ? 'bg-amber-500/20 border-amber-500/40 text-amber-500' 
+                : 'bg-eco/20 border-eco/40 text-eco'
+            }`}>
+              {weeklyTargetStats.missedCount >= 2 ? <AlertTriangle className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-black uppercase tracking-wider text-white">
+                  Weekly Target Compliance Status
+                </h4>
+                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                  weeklyTargetStats.missedCount >= 2 
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' 
+                    : 'bg-eco/20 text-eco border-eco/40'
+                }`}>
+                  {weeklyTargetStats.missedCount >= 2 ? `${weeklyTargetStats.missedCount} Days Missed` : 'On Target'}
+                </span>
+              </div>
+              <p className="text-xs text-white/80 mt-1 leading-relaxed">
+                {weeklyTargetStats.missedCount >= 2
+                  ? `Alert triggered: Reused water did not meet the ${weeklyTargetStats.targetPct}% target on ${weeklyTargetStats.missedCount} completed days. Formal compliance email notification has been dispatched to ${userEmail || 'registered industry contact'}.`
+                  : `Plant is meeting daily reuse targets (${weeklyTargetStats.missedCount} days below target). Operational compliance remains in Good standing.`
+                }
+              </p>
+            </div>
+          </div>
+          {weeklyTargetStats.missedCount >= 2 && (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+                <Mail className="h-3.5 w-3.5" /> Compliance Email Sent
+              </span>
+            </div>
+          )}
         </div>
 
         {/* SECTION 1: Fresh Water Consumption Summary */}

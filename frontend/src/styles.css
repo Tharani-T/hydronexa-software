@@ -137,40 +137,185 @@
 }
 
 @layer utilities {
-  .glass {
-    background: var(--glass);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid var(--glass-border);
+  /* =========================================================
+     GLOBAL THEME CONTRAST SYSTEM (EVERY PORTAL & EVERY PAGE)
+     ========================================================= */
+
+  /* --- 1. LIGHT THEME (White / Light Theme -> Black / Dark Text) --- */
+  html:not(.dark) {
+    color-scheme: light;
   }
-  .glass-strong {
-    background: color-mix(in oklab, var(--card) 70%, transparent);
-    backdrop-filter: blur(30px) saturate(200%);
-    border: 1px solid var(--glass-border);
+
+  html:not(.dark) body {
+    color: #0f172a;
   }
-  .gradient-hero { background: var(--gradient-hero); }
-  .gradient-cyan { background: var(--gradient-cyan); }
-  .gradient-eco { background: var(--gradient-eco); }
-  .gradient-mesh { background: var(--gradient-mesh); }
-  .text-gradient {
-    background: var(--gradient-cyan);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+
+  /* Headings & Title Typography */
+  html:not(.dark) h1,
+  html:not(.dark) h2,
+  html:not(.dark) h3,
+  html:not(.dark) h4,
+  html:not(.dark) h5,
+  html:not(.dark) h6 {
+    color: #0f172a !important;
   }
-  .shadow-glow { box-shadow: var(--shadow-glow); }
-  .shadow-elegant { box-shadow: var(--shadow-elegant); }
-  .glow-ring {
-    box-shadow: 0 0 0 1px var(--cyan), 0 0 20px var(--cyan-glow);
+
+  /* Universal White-to-Black Text Inversion in Light Mode */
+  html:not(.dark) .text-white {
+    color: #0f172a !important;
   }
-  .water-grid {
-    background-image:
-      linear-gradient(var(--glass-border) 1px, transparent 1px),
-      linear-gradient(90deg, var(--glass-border) 1px, transparent 1px);
-    background-size: 40px 40px;
+  html:not(.dark) .text-white\/95,
+  html:not(.dark) .text-white\/90,
+  html:not(.dark) .text-white\/85,
+  html:not(.dark) .text-white\/80 {
+    color: #0f172a !important;
   }
-  .scrollbar-hide::-webkit-scrollbar { display: none; }
-  .scrollbar-hide { scrollbar-width: none; }
+  html:not(.dark) .text-white\/75,
+  html:not(.dark) .text-white\/70,
+  html:not(.dark) .text-white\/65,
+  html:not(.dark) .text-white\/60 {
+    color: #1e293b !important;
+  }
+  html:not(.dark) .text-white\/55,
+  html:not(.dark) .text-white\/50,
+  html:not(.dark) .text-white\/45,
+  html:not(.dark) .text-white\/40 {
+    color: #334155 !important;
+  }
+  html:not(.dark) .text-white\/35,
+  html:not(.dark) .text-white\/30,
+  html:not(.dark) .text-white\/25,
+  html:not(.dark) .text-white\/20,
+  html:not(.dark) .text-white\/10 {
+    color: #475569 !important;
+  }
+
+  /* Light Slate and Light Gray overrides so text is fully legible on light cards */
+  html:not(.dark) .text-slate-100,
+  html:not(.dark) .text-slate-200,
+  html:not(.dark) .text-gray-100,
+  html:not(.dark) .text-gray-200 {
+    color: #0f172a !important;
+  }
+  html:not(.dark) .text-slate-300,
+  html:not(.dark) .text-gray-300 {
+    color: #1e293b !important;
+  }
+  html:not(.dark) .text-slate-400,
+  html:not(.dark) .text-gray-400 {
+    color: #334155 !important;
+  }
+
+  /* Muted text in light mode must be high-contrast and never washed out */
+  html:not(.dark) .text-muted-foreground {
+    color: #475569 !important;
+  }
+
+  /* Card and Glass Container readabilities */
+  html:not(.dark) .glass {
+    background: rgba(255, 255, 255, 0.92) !important;
+    border-color: rgba(226, 232, 240, 0.9) !important;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.04) !important;
+  }
+  html:not(.dark) .glass-strong {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(203, 213, 225, 0.8) !important;
+    box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04) !important;
+  }
+
+  /* Background Pills & Badges in Light Mode:
+     Converts hardcoded dark boxes (like Radar and Tank labels) into clean, high-contrast light slate containers */
+  html:not(.dark) .bg-black\/80,
+  html:not(.dark) .bg-black\/70,
+  html:not(.dark) .bg-black\/60,
+  html:not(.dark) .bg-black\/50 {
+    background-color: rgba(241, 245, 249, 0.95) !important;
+    border-color: rgba(203, 213, 225, 0.8) !important;
+  }
+  html:not(.dark) .bg-black\/40,
+  html:not(.dark) .bg-black\/30,
+  html:not(.dark) .bg-black\/20,
+  html:not(.dark) .bg-black\/10 {
+    background-color: rgba(241, 245, 249, 0.75) !important;
+    border-color: rgba(226, 232, 240, 0.8) !important;
+  }
+  html:not(.dark) .bg-white\/5 {
+    background-color: rgba(15, 23, 42, 0.04) !important;
+  }
+  html:not(.dark) .bg-white\/10 {
+    background-color: rgba(15, 23, 42, 0.07) !important;
+  }
+  html:not(.dark) .bg-white\/20 {
+    background-color: rgba(15, 23, 42, 0.12) !important;
+  }
+  html:not(.dark) .border-white\/5 {
+    border-color: rgba(15, 23, 42, 0.08) !important;
+  }
+  html:not(.dark) .border-white\/10 {
+    border-color: rgba(15, 23, 42, 0.14) !important;
+  }
+  html:not(.dark) .border-white\/20 {
+    border-color: rgba(15, 23, 42, 0.22) !important;
+  }
+
+  /* Keep deliberate white text inside solid colored buttons */
+  html:not(.dark) button.bg-primary,
+  html:not(.dark) .bg-primary,
+  html:not(.dark) .bg-blue-600,
+  html:not(.dark) .bg-blue-700,
+  html:not(.dark) .bg-emerald-600,
+  html:not(.dark) .bg-red-600,
+  html:not(.dark) .bg-amber-600,
+  html:not(.dark) .bg-cyan-600 {
+    color: #ffffff !important;
+  }
+  html:not(.dark) button.bg-primary *,
+  html:not(.dark) .bg-primary *,
+  html:not(.dark) .bg-blue-600 *,
+  html:not(.dark) .bg-blue-700 *,
+  html:not(.dark) .bg-emerald-600 *,
+  html:not(.dark) .bg-red-600 *,
+  html:not(.dark) .bg-amber-600 *,
+  html:not(.dark) .bg-cyan-600 * {
+    color: #ffffff !important;
+  }
+
+  /* --- 2. DARK THEME (Black / Dark Theme -> White Text) --- */
+  html.dark {
+    color-scheme: dark;
+  }
+  html.dark body {
+    color: #ffffff;
+  }
+  html.dark h1,
+  html.dark h2,
+  html.dark h3,
+  html.dark h4,
+  html.dark h5,
+  html.dark h6 {
+    color: #ffffff !important;
+  }
+  html.dark .text-white {
+    color: #ffffff !important;
+  }
+  html.dark .text-white\/95,
+  html.dark .text-white\/90,
+  html.dark .text-white\/85,
+  html.dark .text-white\/80 {
+    color: rgba(255, 255, 255, 0.95) !important;
+  }
+  html.dark .text-white\/75,
+  html.dark .text-white\/70,
+  html.dark .text-white\/65,
+  html.dark .text-white\/60 {
+    color: rgba(255, 255, 255, 0.8) !important;
+  }
+  html.dark .text-white\/50 {
+    color: rgba(255, 255, 255, 0.65) !important;
+  }
+  html.dark .text-muted-foreground {
+    color: #94a3b8 !important;
+  }
 }
 
 @keyframes ripple {

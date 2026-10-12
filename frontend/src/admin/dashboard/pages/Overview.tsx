@@ -11,6 +11,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useAppState } from "@/lib/store";
 import { MOCK_REQUESTS } from "./ContactRequests";
+import { TamilNaduComplianceMap } from "@/government/dashboard/overview/TamilNaduComplianceMap";
 
 
 const MOCK_STATS = [
@@ -189,6 +190,38 @@ export function DashboardOverview() {
     fetchIndustries();
   }, []);
 
+
+  const mapIndustries = useMemo(() => {
+    if (!Array.isArray(industries) || industries.length === 0) {
+      return [
+        { id: "IND-CBE-01", industry_name: "Coimbatore Foundries Ltd", district: "Coimbatore", compliance_status: "Safe", current_cto_consumption: 45, daily_cto_limit: 100, current_reuse_percentage: 65, daily_reuse_target: 60 },
+        { id: "IND-MDU-02", industry_name: "Madurai Chemicals Corp", district: "Madurai", compliance_status: "Warning", current_cto_consumption: 75, daily_cto_limit: 100, current_reuse_percentage: 42, daily_reuse_target: 60 },
+        { id: "IND-ERD-03", industry_name: "Erode Leather Tanneries", district: "Erode", compliance_status: "Critical", current_cto_consumption: 92, daily_cto_limit: 100, current_reuse_percentage: 30, daily_reuse_target: 60 },
+        { id: "IND-CHN-04", industry_name: "Chennai Tech Parks", district: "Chennai", compliance_status: "Safe", current_cto_consumption: 38, daily_cto_limit: 100, current_reuse_percentage: 72, daily_reuse_target: 60 },
+        { id: "IND-SLM-05", industry_name: "Salem Steel Processing", district: "Salem", compliance_status: "Safe", current_cto_consumption: 52, daily_cto_limit: 100, current_reuse_percentage: 60, daily_reuse_target: 60 },
+        { id: "IND-TRY-06", industry_name: "Trichy Heavy Fabrication", district: "Tiruchirappalli", compliance_status: "Safe", current_cto_consumption: 48, daily_cto_limit: 100, current_reuse_percentage: 68, daily_reuse_target: 60 },
+        { id: "IND-TPR-07", industry_name: "Tirupur Knitwear Processing", district: "Tiruppur", compliance_status: "Safe", current_cto_consumption: 41, daily_cto_limit: 100, current_reuse_percentage: 70, daily_reuse_target: 60 }
+      ];
+    }
+    return industries.map((ind, i) => {
+      const name = ind.industryName || ind.company || ind.name || ind.plant_name || ('Industry ' + (i + 1));
+      const district = ind.location || ind.district || ind.city || 'Chennai';
+      const statusRaw = ind.status || ind.compliance_status || 'Safe';
+      const compliance_status = statusRaw === 'Active' || statusRaw === 'Safe' ? 'Safe' : statusRaw === 'Warning' ? 'Warning' : 'Critical';
+      return {
+        id: ind._id || ind.id || ('ind-' + i),
+        industry_name: name,
+        name: name,
+        district: district,
+        compliance_status,
+        current_cto_consumption: ind.current_cto_consumption ?? ind.consumption ?? 50,
+        daily_cto_limit: ind.daily_cto_limit ?? ind.limit ?? 100,
+        current_reuse_percentage: ind.current_reuse_percentage ?? ind.reuse ?? 60,
+        daily_reuse_target: ind.daily_reuse_target ?? 60,
+      };
+    });
+  }, [industries]);
+
   return (
     <div className="space-y-8">
       {/* Stats Grid */}
@@ -270,7 +303,7 @@ export function DashboardOverview() {
             </div>
           </div>
           
-          <InteractiveMapGraph industries={industries} />
+          <TamilNaduComplianceMap industries={mapIndustries} />
         </motion.div>
       </div>
     </div>

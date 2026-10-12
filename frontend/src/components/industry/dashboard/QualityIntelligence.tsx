@@ -26,6 +26,92 @@ import {
   MiniStat
 } from "./shared";
 
+
+export interface StaticPHRecommendation {
+  min: number;
+  max: number;
+  waterType: string;
+  recommendedUses: string[];
+  recommendation: string;
+  isOptimal: boolean;
+  statusBadge: string;
+}
+
+export const STATIC_PH_RECOMMENDATIONS: StaticPHRecommendation[] = [
+  {
+    min: 0.0,
+    max: 5.9,
+    waterType: "Acidic / Pre-Treatment Water",
+    recommendedUses: [
+      "Flue Gas Scrubber Absorption",
+      "Ash Quenching & Heavy Residue Wash",
+      "Equalization Pre-Neutralization"
+    ],
+    recommendation: "Water exhibits acidic pH (< 6.0). Not recommended for process reuse without alkali neutralization. Route to scrubber absorption or primary equalization tanks.",
+    isOptimal: false,
+    statusBadge: "Acidic Wash Grade"
+  },
+  {
+    min: 6.0,
+    max: 6.7,
+    waterType: "Mildly Acidic Industrial Water",
+    recommendedUses: [
+      "Secondary Facility Floor Washing",
+      "Equipment Pre-Rinse Cycles",
+      "Cooling Tower Low-Blowdown Make-Up"
+    ],
+    recommendation: "pH is mildly acidic (6.0 - 6.7). Water is suitable for secondary equipment washing, floor sanitation, and pre-rinse cycles before polishing.",
+    isOptimal: false,
+    statusBadge: "Secondary Wash Grade"
+  },
+  {
+    min: 6.8,
+    max: 7.4,
+    waterType: "Optimal Process Reuse Water (Standard)",
+    recommendedUses: [
+      "Direct Manufacturing Process Supply",
+      "Closed-Circuit Cooling Systems",
+      "Finished Product Rinse Tanks",
+      "Boiler Feedwater Make-Up"
+    ],
+    recommendation: "Water quality strictly meets high-precision reuse standards (pH 6.8 - 7.4). Turn OFF Fresh Water Supply and switch ON Reused Water Supply for full operational cycling.",
+    isOptimal: true,
+    statusBadge: "Process Grade Optimal"
+  },
+  {
+    min: 7.5,
+    max: 8.5,
+    waterType: "Mildly Alkaline Process Water",
+    recommendedUses: [
+      "Textile Dye & Washing Circuits",
+      "Boiler Scrubber Neutralization",
+      "Cooling Tower Circulation",
+      "On-site Landscaping & Greenbelt"
+    ],
+    recommendation: "pH is slightly alkaline (7.5 - 8.5). Water is suitable for secondary process washing, textile dye rinse, and landscape maintenance. Safe for cooling circuits.",
+    isOptimal: false,
+    statusBadge: "Alkaline Secondary Grade"
+  },
+  {
+    min: 8.6,
+    max: 14.0,
+    waterType: "Alkaline Industrial Effluent",
+    recommendedUses: [
+      "Acid Stream Neutralization Dosing",
+      "Air Scrubber Chemical Absorption",
+      "Rough Yard & Ash Slurry Wash"
+    ],
+    recommendation: "High alkaline reading (pH > 8.5). Potential scaling risk in cooling and boiler loops. Requires acid neutralization dosing before cycling to process pipelines.",
+    isOptimal: false,
+    statusBadge: "Alkaline Treatment Grade"
+  }
+];
+
+export function getPHStaticRecommendation(phVal: number): StaticPHRecommendation {
+  const match = STATIC_PH_RECOMMENDATIONS.find(r => phVal >= r.min && phVal <= r.max);
+  return match || STATIC_PH_RECOMMENDATIONS[2];
+}
+
 export function QualityIntelligence({ data }: { data: SensorData | null }) {
   const a = useAdaptive();
   const temp = data?.temperature ?? 25.0;
@@ -97,7 +183,7 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
     };
   }, [isWaterReady]);
 
-  const ph = overridePh !== null ? overridePh : 0.0;
+  const ph = overridePh !== null ? overridePh : (data?.ph && data.ph > 0 ? Number(data.ph.toFixed(1)) : 7.2);
 
   // Adaptive threshold settings
   const phMin = a.phMin ?? 6.5;
@@ -109,6 +195,9 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
   const token = a.token ?? "";
 
   // 1. Water Reuse Eligibility & Safety Status
+  
+  const activeRec = useMemo(() => getPHStaticRecommendation(ph), [ph]);
+
   const isOptimal = ph >= phMin && ph <= phMax && temp <= tempMax;
   const isConditional = ph >= (phMin - 0.5) && ph <= (phMax + 0.5) && temp <= (tempMax + 3);
 
@@ -639,16 +728,38 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
               </div>
 
               {/* Smart Recommendation */}
-              <div className={`mt-6 border rounded-xl p-4 flex gap-3 items-start transition-all ${ph >= 6.8 && ph <= 7.2 ? 'bg-eco/10 border-eco/20' : 'bg-white/5 border-white/10'}`}>
-                 <Brain className={`h-5 w-5 shrink-0 mt-0.5 ${ph >= 6.8 && ph <= 7.2 ? 'text-eco' : 'text-muted-foreground'}`} />
-                 <div className="flex flex-col gap-1">
-                    <span className={`text-[10px] uppercase font-black tracking-widest ${ph >= 6.8 && ph <= 7.2 ? 'text-eco' : 'text-muted-foreground'}`}>Smart Recommendation</span>
-                    <span className="text-xs text-white/90 font-bold leading-relaxed">
-                       {ph >= 6.8 && ph <= 7.2 
-                          ? "Water quality meets the required standards. Turn OFF the Fresh Water Supply and switch ON the Reuse Water Supply to maximize water conservation."
-                          : "Water quality is outside optimal reuse levels. Continue treatment cycles before switching supplies."}
+              <div className={`mt-6 border rounded-xl p-4 flex flex-col gap-3 transition-all ${
+                activeRec.isOptimal ? 'bg-eco/10 border-eco/30' : 'bg-white/5 border-white/10'
+              }`}>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Brain className={`h-5 w-5 shrink-0 ${activeRec.isOptimal ? 'text-eco' : 'text-cyan'}`} />
+                    <span className={`text-[10px] uppercase font-black tracking-widest ${activeRec.isOptimal ? 'text-eco' : 'text-muted-foreground'}`}>
+                      Smart Recommendation (pH {ph.toFixed(1)})
                     </span>
-                 </div>
+                  </div>
+                  <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
+                    activeRec.isOptimal ? 'bg-eco/20 text-eco border-eco/30' : 'bg-cyan/10 text-cyan border-cyan/20'
+                  }`}>
+                    {activeRec.waterType}
+                  </span>
+                </div>
+
+                <div>
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-1.5">
+                    Permitted Application / Water Use:
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {activeRec.recommendedUses.map((use, i) => (
+                      <span key={i} className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-white/10 text-white/90 border border-white/10">
+                        ✓ {use}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-xs text-white/90 font-medium leading-relaxed">
+                    {activeRec.recommendation}
+                  </p>
+                </div>
               </div>
            </div>
         </div>

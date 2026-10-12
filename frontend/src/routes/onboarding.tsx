@@ -274,20 +274,6 @@ function Onboarding() {
                           </p>
                         </div>
                       )}
-
-                      {docStatus === "approved" && extractedDetails && (
-                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                          <p className="font-semibold text-emerald-500 flex items-center gap-2 mb-3">
-                            <CheckCircle2 className="h-4 w-4" /> Approved CTO Details
-                          </p>
-                          <div className="grid md:grid-cols-2 gap-3 text-sm">
-                            <DetailRow label="Daily CTO Water Limit" value={extractedDetails.dailyWaterLimit ?? s.ctoLimit} suffix="L/day" />
-                            <DetailRow label="Monthly CTO Limit" value={extractedDetails.monthlyWaterLimit ?? s.monthlyCtoLimit} suffix="L" />
-                            <DetailRow label="CTO Validity Date" value={extractedDetails.validityDate ?? s.ctoValidity} />
-                            <DetailRow label="Reuse Target" value={extractedDetails.reuseTarget ?? s.reuseTarget} suffix="%" />
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
 
