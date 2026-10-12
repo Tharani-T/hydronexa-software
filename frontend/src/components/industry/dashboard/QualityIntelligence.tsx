@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DashboardShell } from "@/components/DashboardShell";
 import { WaterTank } from "@/components/WaterTank";
@@ -233,56 +233,87 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
 
   const sendingAlertRef = useRef(false);
 
-  useEffect(() => {
-    const currentSimWeek = simWeek === 0 ? 1 : simWeek;
-    const storageKey = `qi_weekly_alert_sent_week_${currentSimWeek}`;
-
-    // Count how many days in the current simulated week missed the review target
-    const missedCount = timelineData.slice(0, 7).filter((row) => {
+  // Count how many days in the current simulated week missed the review target (>= 2 days missed)
+  const missedCount = useMemo(() => {
+    return timelineData.slice(0, 7).filter((row) => {
        const rowTarget = row.target || dailyTarget;
        const percentReused = rowTarget > 0 ? (row.reused / rowTarget) * 100 : 0;
        return row.status === "Missed Target" || row.reused < rowTarget || (!row.status && percentReused < 100);
     }).length;
+  }, [timelineData, dailyTarget]);
 
-    const emailAlreadySent = localStorage.getItem(storageKey) === "true";
+  const [sendingAlert, setSendingAlert] = useState(false);
+  const [emailStatusMessage, setEmailStatusMessage] = useState<string | null>(null);
 
-    // Send email only when missed count reaches 2 or more, and email hasn't been sent yet for this week
-    if (missedCount >= 2 && !emailAlreadySent && !sendingAlertRef.current) {
-       sendingAlertRef.current = true;
+  const sendWeeklyMissedEmail = useCallback(async (isManual = false) => {
+    const currentSimWeek = simWeek === 0 ? 1 : simWeek;
+    const recipient = userEmail || localStorage.getItem("userEmail") || "";
 
-       const recipient = userEmail || "";
-
-       fetch('/api/send-weekly-review-alert', {
-          method: 'POST',
-          headers: {
-             'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-             to: recipient,
-             industryName: industryName || "HydroNexa Plant",
-             simulatedWeek: currentSimWeek,
-             missedCount: missedCount
-          })
-       })
-       .then(res => {
-          if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
-          return res.json();
-       })
-       .then(data => {
-          sendingAlertRef.current = false;
-          if (data.success) {
-             localStorage.setItem(storageKey, "true");
-             console.log(`✅ Weekly Review Alert Email sent successfully for Simulated Week ${currentSimWeek}:`, data);
-          } else {
-             console.error(`❌ Failed to deliver Weekly Review Alert Email for Week ${currentSimWeek}:`, data.error);
-          }
-       })
-       .catch(err => {
-          sendingAlertRef.current = false;
-          console.error(`❌ Network error sending Weekly Review Alert Email for Week ${currentSimWeek}:`, err);
-       });
+    setSendingAlert(true);
+    try {
+      const res = await fetch('/api/send-weekly-review-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipient,
+          industryName: industryName || "HydroNexa Plant",
+          simulatedWeek: currentSimWeek,
+          missedCount: missedCount
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        localStorage.setItem(`qi_weekly_alert_sent_week_${currentSimWeek}_count_${missedCount}`, "true");
+        setEmailStatusMessage(`Compliance alert email successfully dispatched to ${data.recipient || recipient || 'registered industry contact'}`);
+        if (isManual) {
+          alert(`✅ Weekly Target Alert Email Sent Successfully!\nRecipient: ${data.recipient || recipient}\nMissed Days: ${missedCount} / 7\nWeek: ${currentSimWeek}`);
+        }
+      } else {
+        setEmailStatusMessage(`Email delivery failed: ${data.error}`);
+      }
+    } catch (err: any) {
+      console.error("Weekly review alert error:", err);
+      setEmailStatusMessage(`Failed to send email: ${err.message}`);
+    } finally {
+      setSendingAlert(false);
     }
-  }, [timelineData, dailyTarget, userEmail, industryName, token, simWeek]);
+  }, [simWeek, userEmail, industryName, missedCount]);
+
+  useEffect(() => {
+    const currentSimWeek = simWeek === 0 ? 1 : simWeek;
+    const storageKey = `qi_weekly_alert_sent_week_${currentSimWeek}_count_${missedCount}`;
+    const alreadySent = localStorage.getItem(storageKey) === "true";
+
+    // Auto send email when missed target reaches 2 or more
+    if (missedCount >= 2 && !alreadySent && !sendingAlertRef.current) {
+      sendingAlertRef.current = true;
+      const recipient = userEmail || localStorage.getItem("userEmail") || "";
+
+      fetch('/api/send-weekly-review-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipient,
+          industryName: industryName || "HydroNexa Plant",
+          simulatedWeek: currentSimWeek,
+          missedCount: missedCount
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        sendingAlertRef.current = false;
+        if (data.success) {
+          localStorage.setItem(storageKey, "true");
+          setEmailStatusMessage(`Compliance notice delivered to ${data.recipient || recipient || 'registered email'}`);
+          console.log(`✅ Weekly Target Alert Email automatically sent for Week ${currentSimWeek} (${missedCount} missed):`, data);
+        }
+      })
+      .catch(err => {
+        sendingAlertRef.current = false;
+        console.error("Auto email dispatch failed:", err);
+      });
+    }
+  }, [missedCount, simWeek, userEmail, industryName]);
 
   // 4. Quality Breach Alert — auto-email when the live pH or temperature reading
   //    breaches the configured safe limits (fires once per breach episode).
@@ -750,7 +781,7 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
                     Permitted Application / Water Use:
                   </div>
                   <div className="flex flex-wrap gap-1.5 mb-2">
-                    {activeRec.recommendedUses.map((use, i) => (
+                    {activeRec.recommendedUses.map((use: string, i: number) => (
                       <span key={i} className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-white/10 text-white/90 border border-white/10">
                         ✓ {use}
                       </span>
@@ -908,6 +939,40 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
                   Simulate Next Week
                </button>
             </div>
+
+            {/* Missed Weekly Target Compliance Alert Banner */}
+            {missedCount >= 2 && (
+              <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all shadow-md">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-500 border border-amber-500/40 shrink-0">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h5 className="text-sm font-black uppercase tracking-wider text-white">
+                        Weekly Reuse Target Breach Alert ({missedCount} Days Missed &ge; 2)
+                      </h5>
+                      <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                        Email Alert Triggered
+                      </span>
+                    </div>
+                    <p className="text-xs text-white/80 mt-1 leading-relaxed">
+                      Industry failed daily reuse targets on {missedCount} days this week (Target: {dailyTarget} L). An automated compliance warning email has been dispatched to {userEmail || "registered industry contact"} to enforce CTO regulations.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => sendWeeklyMissedEmail(true)}
+                    disabled={sendingAlert}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-400 text-xs font-bold transition-all flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
+                  >
+                    <Mail className="h-4 w-4" />
+                    {sendingAlert ? "Sending..." : "Resend Email Notice"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-3">
                <div className="grid grid-cols-8 gap-4 px-6 py-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b border-white/5">

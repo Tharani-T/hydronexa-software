@@ -736,7 +736,7 @@ app.post('/api/send-weekly-review-alert', async (req, res) => {
       to = "sentinel.automation.ai@gmail.com";
     }
 
-    const subject = "Monthly Review Alert – Target Missed";
+    const subject = "Weekly Reuse Target Not Achieved – Review Alert";
     const text = `Dear ${industryName || 'Industry'},\n\nYour industry has missed the review target two or more times this week (Simulated Week ${simulatedWeek || 1}). Please take immediate corrective action to maintain CTO compliance and avoid future violations.\n\nSummary Details:\n* Industry Name: ${industryName || 'Industry'}\n* Simulated Week: Week ${simulatedWeek || 1}\n* Missed Target Count: ${missedCount || 2}\n* Detection Time: ${new Date().toLocaleString()}\n\nRegards,\nHydroNexa AI Quality Intelligence System`;
 
     const result = await sendEmailWithFallback({
