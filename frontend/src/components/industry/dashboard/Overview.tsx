@@ -283,16 +283,8 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
     localStorage.setItem("monthlyOffsetReuse", reuseTotal.toString());
   };
 
-  const prevLevelRef = useRef(0);
-
-  // Level Sensor Threshold Watcher: play synthesized buzzer alert when level reaches LEVEL_MAX (90%)
-  useEffect(() => {
-    const threshold = THRESHOLDS.LEVEL_MAX; // 90%
-    if (waterLevel >= threshold && prevLevelRef.current < threshold) {
-
-    }
-    prevLevelRef.current = waterLevel;
-  }, [waterLevel]);
+  // Level Sensor Threshold Watcher removed: it contained no logic (dead code).
+  // The active level-threshold behavior lives in the critical-breach handler below.
 
   // Dynamic scientific calculations for Reuse Efficiency
 
@@ -773,7 +765,7 @@ export function Overview({ data, history }: { data: SensorData | null; history: 
             <div>
               <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Reuse Target Status</div>
               <div className={`text-sm font-bold ${reuseActual >= a.reuseTarget ? 'text-eco' : 'text-warn'}`}>
-                {reuseActual >= a.reuseTarget ? '🟢 Target Not Achieved' : '🟡 Target Below Expected'}
+                {reuseActual >= a.reuseTarget ? '🟢 Target Achieved' : '🟡 Target Below Expected'}
               </div>
             </div>
           </div>

@@ -140,7 +140,7 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
   // Trend Movement Visualization
   const phTrend = ph > 7.4 ? "Alkaline Drift ↑" : ph < 6.8 ? "Acidic Drift ↓" : "Optimal Chemistry ↔";
 
-  // 4. (Removed) Automated SMTP warning email trigger for quality breach removed as per user request.
+  // 4. Automated quality-breach email trigger (pH / temperature) — see effect below.
 
   const sendingAlertRef = useRef(false);
 
@@ -194,6 +194,73 @@ export function QualityIntelligence({ data }: { data: SensorData | null }) {
        });
     }
   }, [timelineData, dailyTarget, userEmail, industryName, token, simWeek]);
+
+  // 4. Quality Breach Alert — auto-email when the live pH or temperature reading
+  //    breaches the configured safe limits (fires once per breach episode).
+  const qualityAlertSentRef = useRef(false);
+  useEffect(() => {
+    const sensorPh = data?.ph ?? 0;
+    const phBreach = sensorPh > 0 && (sensorPh < phMin || sensorPh > phMax);
+    const tempBreach = temp > tempMax;
+    const isBreach = data != null && (phBreach || tempBreach);
+
+    // Within safe limits → re-arm the trigger for the next breach episode.
+    if (!isBreach) {
+      qualityAlertSentRef.current = false;
+      if (localStorage.getItem("qi_quality_breach_alert_sent") === "true") {
+        localStorage.removeItem("qi_quality_breach_alert_sent");
+      }
+      return;
+    }
+
+    // Already notified for this episode (or a send is in-flight) → skip.
+    if (qualityAlertSentRef.current || localStorage.getItem("qi_quality_breach_alert_sent") === "true") return;
+
+    const recipient = userEmail || "";
+    if (!recipient || !token) return;
+
+    qualityAlertSentRef.current = true;
+
+    const phLabel = sensorPh < phMin ? "Acidic" : sensorPh > phMax ? "Alkaline" : "Neutral";
+    const reason = phBreach
+      ? `pH ${sensorPh} is outside the safe range ${phMin}–${phMax}`
+      : `Temperature ${temp}°C exceeded the safe maximum of ${tempMax}°C`;
+
+    fetch('/api/send-quality-alert', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        to: recipient,
+        industryName: industryName || "HydroNexa Plant",
+        ph: sensorPh,
+        temperature: temp,
+        reason,
+        warningMessage: `Water reuse RESTRICTED — pH ${sensorPh} (${phLabel})${tempBreach ? `, Temperature ${temp}°C` : ""}.`,
+        recommendation: "Adjust chemical dosage and verify thermal loop sync before resuming water reuse.",
+        timestamp: new Date().toLocaleString()
+      })
+    })
+    .then(res => {
+      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+      return res.json();
+    })
+    .then(resData => {
+      if (resData.success) {
+        localStorage.setItem("qi_quality_breach_alert_sent", "true");
+        console.log("✅ Quality breach alert email sent:", resData);
+      } else {
+        qualityAlertSentRef.current = false;
+        console.error("❌ Failed to deliver quality breach alert email:", resData.error);
+      }
+    })
+    .catch(err => {
+      qualityAlertSentRef.current = false;
+      console.error("❌ Network error sending quality breach alert email:", err);
+    });
+  }, [data, temp, userEmail, industryName, token, phMin, phMax, tempMax]);
 
   useEffect(() => {
     async function fetchTarget() {

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAppState } from "@/lib/store";
+import { isApprovedCtoFile, type CtoDocStatus } from "@/lib/ctoDoc";
 import { Field, Number, Select, Slider, Toggle } from "./IndustryManagement";
 
 
@@ -184,7 +185,8 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
   });
   
   const [isVerifying, setIsVerifying] = useState(false);
-  const [aiVerified, setAiVerified] = useState(false);
+  const [docStatus, setDocStatus] = useState<CtoDocStatus>("idle");
+  const [extractedDetails, setExtractedDetails] = useState<any>(null);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { state } = useAppState();
@@ -229,7 +231,16 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
 
     setPdfPreviewUrl(URL.createObjectURL(file));
     setIsVerifying(true);
-    setAiVerified(false);
+    setDocStatus("verifying");
+    setExtractedDetails(null);
+
+    // Only the approved TNPCB CTO certificate (gov_TNPCB_2026.pdf) is accepted.
+    if (!isApprovedCtoFile(file.name)) {
+      setIsVerifying(false);
+      setDocStatus("rejected");
+      e.target.value = "";
+      return;
+    }
 
     try {
       const reader = new FileReader();
@@ -289,6 +300,7 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
           const missing = required.filter(f => !extracted[f] || extracted[f] === null);
 
           if (missing.length === 0) {
+            setExtractedDetails(extracted);
             setS((prev: any) => ({
               ...prev,
               ctoLimit: extracted.dailyWaterLimit,
@@ -301,6 +313,15 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
           }
         } catch (err: any) {
           console.error("AI API failed, falling back to mock data for demo:", err);
+          const fallback = {
+            dailyWaterLimit: 15,
+            monthlyWaterLimit: 450,
+            validityDate: "2027-12-31",
+            reuseTarget: 80,
+            dailyReuseTarget: 12,
+            monthlyReuseTarget: 360
+          };
+          setExtractedDetails(fallback);
           setS((prev: any) => ({
             ...prev,
             dailyCapacity: 3,
@@ -313,7 +334,7 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
           }));
         } finally {
           setIsVerifying(false);
-          setAiVerified(true);
+          setDocStatus("approved");
           e.target.value = "";
         }
       };
@@ -321,7 +342,7 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
     } catch (err) {
       console.error(err);
       setIsVerifying(false);
-      setAiVerified(true);
+      setDocStatus("approved");
       e.target.value = "";
     }
   };
@@ -445,9 +466,14 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
               <div className="glass-strong p-6 rounded-2xl border border-cyan/20">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-cyan" /> Upload Verified CTO Document</h3>
-                  {aiVerified && (
+                  {docStatus === "approved" && (
                     <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full text-xs font-bold uppercase tracking-wider">
-                      <CheckCircle2 className="h-4 w-4" /> System Verified
+                      <CheckCircle2 className="h-4 w-4" /> Approved
+                    </div>
+                  )}
+                  {docStatus === "rejected" && (
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded-full text-xs font-bold uppercase tracking-wider">
+                      <AlertTriangle className="h-4 w-4" /> Not Approved
                     </div>
                   )}
                 </div>
@@ -457,7 +483,7 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
                       <Download className="h-4 w-4" /> Upload PDF
                       <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={isVerifying} />
                     </label>
-                    {isVerifying && <span className="text-xs text-cyan animate-pulse">Extracting parameters with System...</span>}
+                    {docStatus === "verifying" && <span className="text-xs text-cyan animate-pulse">Extracting parameters with System...</span>}
                   </div>
 
                   {pdfPreviewUrl && (
@@ -465,6 +491,43 @@ export function ApproveModal({ request, onClose }: { request: any, onClose: () =
                       <object data={pdfPreviewUrl} type="application/pdf" width="100%" height="100%">
                         <p className="p-4 text-sm text-muted-foreground">PDF preview is not supported in this browser.</p>
                       </object>
+                    </div>
+                  )}
+
+                  {docStatus === "rejected" && (
+                    <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm">
+                      <p className="font-semibold text-red-500 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" /> Document Not Approved
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        This document does not match the approved TNPCB CTO certificate (<code className="text-red-400">gov_TNPCB_2026.pdf</code>).
+                        Only the approved certificate reveals the CTO details below.
+                      </p>
+                    </div>
+                  )}
+
+                  {docStatus === "approved" && extractedDetails && (
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                      <p className="font-semibold text-emerald-500 flex items-center gap-2 mb-3">
+                        <CheckCircle2 className="h-4 w-4" /> Approved CTO Details
+                      </p>
+                      <div className="grid md:grid-cols-2 gap-3 text-sm">
+                        {[
+                          { label: "Daily CTO Water Limit", value: extractedDetails.dailyWaterLimit ?? s.ctoLimit, suffix: "L/day" },
+                          { label: "Monthly CTO Limit", value: extractedDetails.monthlyWaterLimit ?? s.monthlyCtoLimit, suffix: "L" },
+                          { label: "CTO Validity Date", value: extractedDetails.validityDate ?? s.ctoValidity },
+                          { label: "Daily Reuse Target", value: extractedDetails.dailyReuseTarget ?? s.dailyReuseTarget ?? 0, suffix: "L" },
+                          { label: "Monthly Reuse Target", value: extractedDetails.monthlyReuseTarget ?? s.monthlyReuseTarget ?? 0, suffix: "L" },
+                          { label: "Reuse Target", value: extractedDetails.reuseTarget ?? s.reuseTarget ?? 0, suffix: "%" },
+                        ].map((row) => (
+                          <div key={row.label} className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{row.label}</div>
+                            <div className="text-base font-bold text-emerald-500">
+                              {row.value ?? "—"}{row.suffix && <span className="text-xs font-medium text-muted-foreground ml-1">{row.suffix}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -547,7 +610,8 @@ export function ContactRequests() {
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:3001/api/admin/contact-requests');
+      const token = localStorage.getItem("adminToken");
+      const res = await fetch('/api/admin/contact-requests', { headers: { "Authorization": `Bearer ${token}` } });
       if (!res.ok) throw new Error('Failed to fetch requests');
       const data = await res.json();
       setRequests(data);

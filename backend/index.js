@@ -67,6 +67,14 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Middleware to enforce admin role on admin-only routes
+const requireAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  }
+  next();
+};
+
 // --- AUTHENTICATION ROUTES ---
 
 // Register (Legacy)
@@ -107,7 +115,9 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/admin/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (email === "tharani.t.ciet@gmail.com" && password === "HydroNexa@2026") {
+    const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "tharani.t.ciet@gmail.com";
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "HydroNexa@2026";
+    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
       const token = jwt.sign({ id: "admin-123", email, role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
       return res.json({ token, success: true });
     }
@@ -322,7 +332,7 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-app.get('/api/admin/contact-requests', async (req, res) => {
+app.get('/api/admin/contact-requests', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('contact_messages')
@@ -339,7 +349,7 @@ app.get('/api/admin/contact-requests', async (req, res) => {
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-app.post('/api/admin/parse-pdf', authenticateToken, upload.single('pdf'), async (req, res) => {
+app.post('/api/admin/parse-pdf', authenticateToken, requireAdmin, upload.single('pdf'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -367,10 +377,9 @@ app.post('/api/admin/parse-pdf', authenticateToken, upload.single('pdf'), async 
 // Admin Approve Industry
 app.post('/api/admin/approve-industry', authenticateToken, async (req, res) => {
   try {
-    // Only allow admin to perform this. Add basic check:
+    // Admin-only operation
     if (req.user.role !== 'admin') {
-      // In this demo environment, we'll allow it if role is missing, but log a warning
-      console.warn("Non-admin user attempting approval, or missing role");
+      return res.status(403).json({ error: 'Forbidden. Admin access required.' });
     }
 
     const { requestId, industryName, email, password, authUserId, setupData } = req.body;
@@ -490,7 +499,7 @@ app.post('/api/admin/reset-password', authenticateToken, async (req, res) => {
 });
 
 // Admin Reject Industry
-app.post('/api/admin/reject-industry', authenticateToken, async (req, res) => {
+app.post('/api/admin/reject-industry', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { requestId } = req.body;
     if (!requestId) return res.status(400).json({ error: 'Request ID is required' });
@@ -510,7 +519,7 @@ app.post('/api/admin/reject-industry', authenticateToken, async (req, res) => {
 });
 
 // Admin Get All Approved Industries
-app.get('/api/admin/industries', authenticateToken, async (req, res) => {
+app.get('/api/admin/industries', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { data: industries, error } = await supabase
       .from('setups')
@@ -562,7 +571,7 @@ app.get('/api/admin/industries', authenticateToken, async (req, res) => {
 });
 
 // Admin Update Industry Settings
-app.put('/api/admin/industries/:id', authenticateToken, async (req, res) => {
+app.put('/api/admin/industries/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params; // setups._id
     const { password, user_id, setupData } = req.body;
@@ -822,16 +831,6 @@ app.post('/api/send-cto-alert', authenticateToken, async (req, res) => {
   try {
     const { to, industryName, dailyLimit, currentUsage, exceededAmount, timestamp } = req.body;
     const userId = req.user.id;
-    
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      }
-    });
 
     const text = `Dear ${industryName || 'Industry'},
 
@@ -850,34 +849,47 @@ Please optimize water usage and reuse operations to avoid further compliance ris
 Regards,
 HydroNexa Monitoring Intelligence System`;
 
-    // Try sending email
-    let deliveryStatus = 'Sent';
-    try {
-      await transporter.sendMail({
-        from: `"HydroNexa Monitoring Intelligence System" <${process.env.SMTP_USER}>`,
-        to,
-        subject: '🚨 CTO Compliance Warning — HydroNexa Monitoring System',
-        text
-      });
-      deliveryStatus = 'Delivered';
-    } catch (emailErr) {
-      console.error('Nodemailer failed to send email. Saving history as failed.', emailErr);
-      deliveryStatus = 'Failed';
+    // Send via the shared SMTP + Ethereal fallback helper, so the alert still
+    // delivers in demo environments where primary SMTP is not configured.
+    const emailResult = await sendEmailWithFallback({
+      to,
+      subject: '🚨 CTO Compliance Warning — HydroNexa Monitoring System',
+      text,
+      fromName: "HydroNexa Monitoring Intelligence System"
+    });
+    const deliveryStatus = emailResult.success ? 'Delivered' : 'Failed';
+    if (!emailResult.success) {
+      console.error('CTO alert email failed to deliver:', emailResult.error);
     }
 
-    // Save alert history
-    const { error } = await supabase
-      .from('alert_history')
-      .insert({
-        user_id: userId,
-        industryName: industryName || 'Industry',
-        alertType: 'Daily CTO Limit Violation',
-        message: `Daily CTO Limit of ${dailyLimit} KL exceeded. Current: ${currentUsage} KL. Exceeded by: ${exceededAmount} KL.`,
-        deliveryStatus,
-        timestamp: new Date()
-      });
-
-    if (error) throw error;
+    // Save alert history (best-effort: a history-write failure must never turn a
+    // delivered email into a 500, and it tolerates either column casing in the DB)
+    const alertRow = {
+      user_id: userId,
+      industryname: industryName || 'Industry',
+      alerttype: 'Daily CTO Limit Exceeded',
+      message: `Daily CTO Limit of ${dailyLimit} KL exceeded. Current: ${currentUsage} KL. Exceeded by: ${exceededAmount} KL.`,
+      deliverystatus: deliveryStatus,
+      timestamp: new Date()
+    };
+    try {
+      const { error } = await supabase.from('alert_history').insert(alertRow);
+      if (!error) { /* saved fine */ }
+      else {
+        // Retry with camelCase keys in case the table was created with quoted names
+        const { error: err2 } = await supabase.from('alert_history').insert({
+          user_id: userId,
+          industryName: industryName || 'Industry',
+          alertType: 'Daily CTO Limit Exceeded',
+          message: alertRow.message,
+          deliveryStatus,
+          timestamp: new Date()
+        });
+        if (err2) console.error('Failed to save alert history (both casings):', err2.message);
+      }
+    } catch (err) {
+      console.error('Failed to save alert history:', err.message);
+    }
 
     await checkAndMarkCritical(userId, req.user.email, currentUsage, 0);
 
@@ -892,16 +904,6 @@ app.post('/api/send-quality-alert', authenticateToken, async (req, res) => {
   try {
     const { to, industryName, ph, temperature, reason, warningMessage, recommendation, timestamp } = req.body;
     const userId = req.user.id;
-    
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      }
-    });
 
     const text = `Dear ${industryName || 'Industry'},
 
@@ -920,33 +922,46 @@ Immediate operational attention is recommended to adjust chemical dosage or chec
 Regards,
 HydroNexa AI Water Intelligence Engine`;
 
-    let deliveryStatus = 'Sent';
-    try {
-      await transporter.sendMail({
-        from: `"HydroNexa AI Water Intelligence Engine" <${process.env.SMTP_USER}>`,
-        to,
-        subject: '⚠️ WATER QUALITY BREACH ALERT — HydroNexa AI Engine',
-        text
-      });
-      deliveryStatus = 'Delivered';
-    } catch (emailErr) {
-      console.error('Nodemailer failed to send quality alert email:', emailErr);
-      deliveryStatus = 'Failed';
+    // Send via the shared SMTP + Ethereal fallback helper, so the alert still
+    // delivers in demo environments where primary SMTP is not configured.
+    const emailResult = await sendEmailWithFallback({
+      to,
+      subject: '⚠️ WATER QUALITY BREACH ALERT — HydroNexa AI Engine',
+      text,
+      fromName: "HydroNexa AI Water Intelligence Engine"
+    });
+    const deliveryStatus = emailResult.success ? 'Delivered' : 'Failed';
+    if (!emailResult.success) {
+      console.error('Quality alert email failed to deliver:', emailResult.error);
     }
 
-    // Save alert history
-    const { error } = await supabase
-      .from('alert_history')
-      .insert({
-        user_id: userId,
-        industryName: industryName || 'Industry',
-        alertType: 'Water Quality Breach',
-        message: `Quality Breach: pH ${ph} pH, Temp ${temperature}°C. Restriction: ${reason}. Recommendation: ${recommendation}`,
-        deliveryStatus,
-        timestamp: new Date()
-      });
-      
-    if (error) throw error;
+    // Save alert history (best-effort: a history-write failure must never turn a
+    // delivered email into a 500, and it tolerates either column casing in the DB)
+    const alertRow = {
+      user_id: userId,
+      industryname: industryName || 'Industry',
+      alerttype: 'Water Quality Breach',
+      message: `Quality Breach: pH ${ph} pH, Temp ${temperature}°C. Restriction: ${reason}. Recommendation: ${recommendation}`,
+      deliverystatus: deliveryStatus,
+      timestamp: new Date()
+    };
+    try {
+      const { error } = await supabase.from('alert_history').insert(alertRow);
+      if (!error) { /* saved fine */ }
+      else {
+        const { error: err2 } = await supabase.from('alert_history').insert({
+          user_id: userId,
+          industryName: industryName || 'Industry',
+          alertType: 'Water Quality Breach',
+          message: alertRow.message,
+          deliveryStatus,
+          timestamp: new Date()
+        });
+        if (err2) console.error('Failed to save quality alert history (both casings):', err2.message);
+      }
+    } catch (err) {
+      console.error('Failed to save quality alert history:', err.message);
+    }
 
     await checkAndMarkCritical(userId, req.user.email, 0, 0);
 
@@ -1028,21 +1043,29 @@ async function updateIndustryTable(userId, setup, email, currentCto, currentReus
 async function startComplianceMonitor() {
   console.log('🤖 Starting Automated Compliance Monitor (Background Service)...');
   
-  // Run every 5 minutes to ensure timely detection
+  // Run every 60 seconds: fast enough for live demo feedback without hammering
+  // Supabase. (The frontend polls every 5s; a background email monitor doesn't
+  // need that frequency.)
   setInterval(async () => {
     try {
       const { data: setups, error: setupError } = await supabase.from('setups').select('*');
       if (setupError || !setups) return;
 
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || "smtp.gmail.com",
-        port: parseInt(process.env.SMTP_PORT) || 587,
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS
-        }
-      });
+      // NOTE: sensor_data is a single shared channel in this demo (rows are not
+      // scoped per user), so the latest + weekly readings are fetched ONCE per
+      // tick and applied to all setups. For multi-industry production, scope
+      // these queries per industry with `.eq('user_id', userId)`.
+      const { data: todayData } = await supabase
+        .from('sensor_data')
+        .select('*')
+        .order('timestamp', { ascending: false })
+        .limit(1);
+      const weekStart = getCalendarWeekStart().toISOString();
+      const { data: weekData } = await supabase
+        .from('sensor_data')
+        .select('*')
+        .gte('timestamp', weekStart)
+        .order('timestamp', { ascending: true });
 
       for (const setup of setups) {
         const userId = setup.user_id;
@@ -1056,13 +1079,6 @@ async function startComplianceMonitor() {
 
         const dailyCtoLimit = setup.ctolimit || 0;
         const dailyReuseTarget = setup.reusetarget || 0;
-
-        // Fetch the absolute latest sensor data to match frontend's live data
-        const { data: todayData } = await supabase
-          .from('sensor_data')
-          .select('*')
-          .order('timestamp', { ascending: false })
-          .limit(1);
 
         let currentCtoConsumption = 0;
         let currentReusePercentage = 0;
@@ -1106,15 +1122,14 @@ Please review today's water usage and prioritize Reused Water to maintain compli
 Regards,
 HydroNexa Compliance System`;
 
-            try {
-              await transporter.sendMail({
-                from: `"HydroNexa Compliance System" <${process.env.SMTP_USER}>`,
-                to: email,
-                subject: 'Daily CTO Limit Exceeded',
-                text
-              });
-            } catch (err) {
-              console.error('Failed to send CTO alert email (SMTP error)', err);
+            const ctoEmailResult = await sendEmailWithFallback({
+              to: email,
+              subject: 'Daily CTO Limit Exceeded',
+              text,
+              fromName: "HydroNexa Compliance System"
+            });
+            if (!ctoEmailResult.success) {
+              console.error('Failed to send CTO alert email:', ctoEmailResult.error);
             }
 
             // Always log the alert history and update the industry table, even if SMTP fails (for demo purposes)
@@ -1136,13 +1151,6 @@ HydroNexa Compliance System`;
         }
 
         // --- EMAIL TRIGGER 2: Weekly Reuse Target NOT Achieved ---
-        const weekStart = getCalendarWeekStart().toISOString();
-        const { data: weekData } = await supabase
-          .from('sensor_data')
-          .select('*')
-          .gte('timestamp', weekStart)
-          .order('timestamp', { ascending: true });
-
         let missedDays = 0;
         if (weekData && weekData.length > 0) {
           const days = {};
@@ -1195,15 +1203,14 @@ Please review plant operations and increase Reused Water utilization.
 Regards,
 HydroNexa Compliance System`;
 
-            try {
-              await transporter.sendMail({
-                from: `"HydroNexa Compliance System" <${process.env.SMTP_USER}>`,
-                to: email,
-                subject: 'Weekly Reuse Target Not Achieved',
-                text
-              });
-            } catch (err) {
-              console.error('Failed to send Reuse alert email (SMTP error)', err);
+            const reuseEmailResult = await sendEmailWithFallback({
+              to: email,
+              subject: 'Weekly Reuse Target Not Achieved',
+              text,
+              fromName: "HydroNexa Compliance System"
+            });
+            if (!reuseEmailResult.success) {
+              console.error('Failed to send Reuse alert email:', reuseEmailResult.error);
             }
 
             try {
@@ -1226,7 +1233,7 @@ HydroNexa Compliance System`;
     } catch (error) {
       console.error('Compliance Monitor Error:', error);
     }
-  }, 10 * 1000); // 10-second polling interval for immediate demo feedback
+  }, 60 * 1000); // 60-second polling interval for live demo feedback
 }
 
 // Initialize continuous monitoring

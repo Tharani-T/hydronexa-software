@@ -34,7 +34,7 @@ export function DashboardShell({
   const logout = () => {
     if (logoutTo === "/government/login") update({ govAuthed: false });
     else update({ industryAuthed: false });
-    navigate({ to: "/" });
+    navigate({ to: logoutTo || "/" });
   };
   return (
     <div className={`h-screen overflow-hidden flex bg-background ${logoutTo === "/government/login" ? 'gov-theme' : 'industry-theme'}`}>

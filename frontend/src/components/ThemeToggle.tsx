@@ -3,10 +3,10 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
 export function ThemeToggle() {
-  const [dark, setDark] = useState(true);
+  const [dark, setDark] = useState(false);
   useEffect(() => {
     const saved = localStorage.getItem("hn-theme");
-    const isDark = saved ? saved === "dark" : true;
+    const isDark = saved ? saved === "dark" : false;
     setDark(isDark);
     document.documentElement.classList.toggle("dark", isDark);
   }, []);

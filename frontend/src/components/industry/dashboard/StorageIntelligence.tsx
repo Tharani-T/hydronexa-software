@@ -688,18 +688,13 @@ function WeeklyWaterReuseVsFreshWaterAnalysis({ data }: any) {
            setHasSentStrategyAlert(true);
            localStorage.setItem('waterNextWeekAlertSent_mock', 'true');
            
-           fetch('http://localhost:5000/api/email/send-alert', {
+           fetch('/api/send-email', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                  to: userEmail,
-                 industryName: state.setup?.plantName,
                  subject: "Fresh Water Usage Exceeded Weekly Target",
-                 reason: "The current week's Fresh Water consumption has exceeded the planned operational strategy.",
-                 warningMessage: `Current Fresh Water Usage: ${currentFreshTotal.toFixed(1)}L | Target Limit: ${lastWeekStrategy.targetFreshLiters.toFixed(1)}L.`,
-                 recommendation: "Please prioritize Reused Water to maintain CTO compliance and reduce environmental impact.",
-                 timestamp: new Date().toLocaleString(),
-                 extraDetails: `Expected Fresh Water Target: ${lastWeekStrategy.targetFreshPct.toFixed(1)}%`
+                 text: `Dear ${state.setup?.plantName || 'Industry'},\n\nThe current week's Fresh Water consumption (${currentFreshTotal.toFixed(1)}L) has exceeded the planned operational strategy target (${lastWeekStrategy.targetFreshLiters.toFixed(1)}L).\n\nRecommendation: Please prioritize Reused Water to maintain CTO compliance and reduce environmental impact.`
               })
            }).catch(err => console.error("Strategy alert email failed", err));
         }

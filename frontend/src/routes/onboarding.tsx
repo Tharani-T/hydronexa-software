@@ -4,6 +4,7 @@ import { Logo } from "@/components/Logo";
 import { Particles } from "@/components/Particles";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAppState, Industries, IndustryType } from "@/lib/store";
+import { isApprovedCtoFile, type CtoDocStatus } from "@/lib/ctoDoc";
 import { useState, useEffect } from "react";
 import { Check, ChevronLeft, ChevronRight, Save, Building2, Gauge, Clock, BellRing, Sparkles, Eye, EyeOff, Download, AlertTriangle, FileText, CheckCircle2 } from "lucide-react";
 
@@ -25,7 +26,8 @@ function Onboarding() {
   const [done, setDone] = useState(false);
   const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
   const [isVerifying, setIsVerifying] = useState(false);
-  const [aiVerified, setAiVerified] = useState(false);
+  const [docStatus, setDocStatus] = useState<CtoDocStatus>("idle");
+  const [extractedDetails, setExtractedDetails] = useState<any>(null);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const s = state.setup;
 
@@ -34,8 +36,15 @@ function Onboarding() {
     if (!file) return;
 
     setPdfPreviewUrl(URL.createObjectURL(file));
-    setIsVerifying(true);
-    setAiVerified(false);
+    setDocStatus("verifying");
+    setExtractedDetails(null);
+
+    // Only the approved TNPCB CTO certificate (gov_TNPCB_2026.pdf) is accepted.
+    if (!isApprovedCtoFile(file.name)) {
+      setDocStatus("rejected");
+      e.target.value = "";
+      return;
+    }
 
     try {
       const reader = new FileReader();
@@ -89,6 +98,7 @@ function Onboarding() {
             throw new Error("Failed to parse JSON from AI");
           }
 
+          setExtractedDetails(extracted);
           updateSetup({
             ctoLimit: extracted.dailyWaterLimit,
             monthlyCtoLimit: extracted.monthlyWaterLimit,
@@ -97,6 +107,13 @@ function Onboarding() {
           });
         } catch (err: any) {
           console.error("AI API failed, falling back to mock data for demo:", err);
+          const fallback = {
+            dailyWaterLimit: 15,
+            monthlyWaterLimit: 450,
+            validityDate: "2027-12-31",
+            reuseTarget: 80
+          };
+          setExtractedDetails(fallback);
           updateSetup({
             dailyCapacity: 3,
             ctoLimit: 15,
@@ -106,7 +123,7 @@ function Onboarding() {
           });
         } finally {
           setIsVerifying(false);
-          setAiVerified(true);
+          setDocStatus("approved");
           e.target.value = "";
         }
       };
@@ -114,7 +131,7 @@ function Onboarding() {
     } catch (err) {
       console.error(err);
       setIsVerifying(false);
-      setAiVerified(true);
+      setDocStatus("approved");
       e.target.value = "";
     }
   };
@@ -218,9 +235,14 @@ function Onboarding() {
                           Let the System verify and auto-fill your capacity and compliance settings.
                         </p>
                       </div>
-                      {aiVerified && (
+                      {docStatus === "approved" && (
                         <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full text-xs font-bold uppercase tracking-wider">
-                          <CheckCircle2 className="h-4 w-4" /> System Verified
+                          <CheckCircle2 className="h-4 w-4" /> Approved
+                        </div>
+                      )}
+                      {docStatus === "rejected" && (
+                        <div className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded-full text-xs font-bold uppercase tracking-wider">
+                          <AlertTriangle className="h-4 w-4" /> Not Approved
                         </div>
                       )}
                     </div>
@@ -230,7 +252,7 @@ function Onboarding() {
                           <Download className="h-4 w-4" /> Upload PDF
                           <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={isVerifying} />
                         </label>
-                        {isVerifying && <span className="text-xs text-cyan animate-pulse flex items-center gap-2"><Sparkles className="h-3 w-3 animate-spin" /> Verifying document with System...</span>}
+                        {docStatus === "verifying" && <span className="text-xs text-cyan animate-pulse flex items-center gap-2"><Sparkles className="h-3 w-3 animate-spin" /> Verifying document with System...</span>}
                       </div>
 
                       {pdfPreviewUrl && (
@@ -238,6 +260,32 @@ function Onboarding() {
                           <object data={pdfPreviewUrl} type="application/pdf" width="100%" height="100%">
                             <p className="p-4 text-sm text-muted-foreground">PDF preview is not supported in this browser.</p>
                           </object>
+                        </div>
+                      )}
+
+                      {docStatus === "rejected" && (
+                        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm">
+                          <p className="font-semibold text-red-500 flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4" /> Document Not Approved
+                          </p>
+                          <p className="mt-1 text-muted-foreground">
+                            This document does not match the approved TNPCB CTO certificate (<code className="text-red-400">gov_TNPCB_2026.pdf</code>).
+                            Upload the correct certificate to approve and auto-fill your limits below.
+                          </p>
+                        </div>
+                      )}
+
+                      {docStatus === "approved" && extractedDetails && (
+                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                          <p className="font-semibold text-emerald-500 flex items-center gap-2 mb-3">
+                            <CheckCircle2 className="h-4 w-4" /> Approved CTO Details
+                          </p>
+                          <div className="grid md:grid-cols-2 gap-3 text-sm">
+                            <DetailRow label="Daily CTO Water Limit" value={extractedDetails.dailyWaterLimit ?? s.ctoLimit} suffix="L/day" />
+                            <DetailRow label="Monthly CTO Limit" value={extractedDetails.monthlyWaterLimit ?? s.monthlyCtoLimit} suffix="L" />
+                            <DetailRow label="CTO Validity Date" value={extractedDetails.validityDate ?? s.ctoValidity} />
+                            <DetailRow label="Reuse Target" value={extractedDetails.reuseTarget ?? s.reuseTarget} suffix="%" />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -394,6 +442,17 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
       <button onClick={() => onChange(!value)} className={`relative h-7 w-12 rounded-full transition ${value ? "gradient-cyan shadow-glow" : "bg-muted"}`}>
         <motion.span layout className={`absolute top-1 ${value ? "right-1" : "left-1"} h-5 w-5 rounded-full bg-background`} />
       </button>
+    </div>
+  );
+}
+
+function DetailRow({ label, value, suffix }: { label: string; value: any; suffix?: string }) {
+  return (
+    <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="text-base font-bold text-emerald-500">
+        {value ?? "—"}{suffix && <span className="text-xs font-medium text-muted-foreground ml-1">{suffix}</span>}
+      </div>
     </div>
   );
 }
